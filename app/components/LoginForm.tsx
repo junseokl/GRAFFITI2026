@@ -26,8 +26,16 @@ export function LoginForm() {
     if (res.ok) {
       router.replace("/");
       router.refresh();
-    } else {
+    } else if (res.status === 401) {
       setError("ID 또는 비밀번호가 틀렸습니다");
+      setSubmitting(false);
+    } else {
+      const data = (await res.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      setError(
+        `서버 오류 (${res.status}): ${data?.message ?? "환경변수 설정을 확인하세요"}`,
+      );
       setSubmitting(false);
     }
   }

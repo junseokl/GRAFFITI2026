@@ -21,14 +21,24 @@ export async function POST(req: NextRequest) {
 
   const { username, password } = body as { username: string; password: string };
 
-  const ok = await verifyCredentials(username, password);
-  if (!ok) {
+  try {
+    const ok = await verifyCredentials(username, password);
+    if (!ok) {
+      return NextResponse.json(
+        { error: "invalid_credentials" },
+        { status: 401 },
+      );
+    }
+
+    await createSession(username);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    // 환경변수 누락/오류 등 서버 설정 문제. Vercel 로그에 남기고 메시지 반환.
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[login] server error:", message);
     return NextResponse.json(
-      { error: "invalid_credentials" },
-      { status: 401 },
+      { error: "server_error", message },
+      { status: 500 },
     );
   }
-
-  await createSession(username);
-  return NextResponse.json({ ok: true });
 }
