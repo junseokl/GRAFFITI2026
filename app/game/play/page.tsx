@@ -41,7 +41,7 @@ export default async function GamePlayPage() {
   const isAdmin = isAdminUsername(session.username);
 
   try {
-    const data = await fetchGameData(isAdmin);
+    const data = await fetchGameData(isAdmin, session.username);
     if (isAdmin) {
       return <AdminDashboard data={data} />;
     }
@@ -69,7 +69,10 @@ export default async function GamePlayPage() {
   }
 }
 
-async function fetchGameData(isAdmin: boolean): Promise<GameData> {
+async function fetchGameData(
+  isAdmin: boolean,
+  username: string,
+): Promise<GameData> {
   const [
     stateRows,
     companyRows,
@@ -86,10 +89,11 @@ async function fetchGameData(isAdmin: boolean): Promise<GameData> {
     sql`SELECT round, company_id, yield_pct FROM round_results`,
   ]);
 
-  // 입찰 정보는 admin 만 받음 (플레이어 화면엔 노출하지 않음)
+  // admin 은 모든 입찰을, 플레이어는 자기 팀 입찰만 받음
+  // (다른 팀 입찰가는 플레이어 화면에 노출하지 않음)
   const bidRows = isAdmin
     ? await sql`SELECT team_username, company_id, price, count FROM bids`
-    : [];
+    : await sql`SELECT team_username, company_id, price, count FROM bids WHERE team_username = ${username}`;
 
   const configuredUsernames = getAllUsernames().filter(
     (u) => !isAdminUsername(u),

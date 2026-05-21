@@ -9,6 +9,8 @@ import {
   settleStockRound,
   opSetInvestment,
   opClearInvestment,
+  opSetBid,
+  opClearBid,
 } from "@/lib/game";
 
 const ROUNDS = ["seed", "series-a", "series-b", "series-c", "ended"] as const;
@@ -181,43 +183,7 @@ export async function setBid(
   const c = assertInt(companyId, "companyId");
   const p = assertInt(price, "price", { min: 0 });
   const n = assertInt(count, "count", { min: 1 });
-
-  const companyRows = (await sql`
-    SELECT min_order_price FROM companies WHERE id = ${c}
-  `) as { min_order_price: number }[];
-  if (!companyRows[0]) throw new Error("회사를 찾을 수 없습니다");
-  if (p < companyRows[0].min_order_price) {
-    throw new Error(
-      `최소 주문 금액(${companyRows[0].min_order_price}) 이상이어야 합니다`,
-    );
-  }
-
-  const existingRows = (await sql`
-    SELECT price, count FROM bids WHERE team_username = ${u} AND company_id = ${c}
-  `) as { price: number; count: number }[];
-  const prevTotal = existingRows[0]
-    ? existingRows[0].price * existingRows[0].count
-    : 0;
-  const newTotal = p * n;
-  const delta = newTotal - prevTotal;
-
-  if (delta > 0) {
-    const teamRows = (await sql`
-      SELECT seed FROM teams WHERE username = ${u}
-    `) as { seed: number }[];
-    const currentSeed = teamRows[0]?.seed ?? 0;
-    if (currentSeed < delta) {
-      throw new Error(`seed 부족 (현재 ${currentSeed}, 필요 ${delta})`);
-    }
-  }
-
-  if (delta !== 0) {
-    await sql`UPDATE teams SET seed = seed - ${delta} WHERE username = ${u}`;
-  }
-  await sql`
-    INSERT INTO bids (team_username, company_id, price, count) VALUES (${u}, ${c}, ${p}, ${n})
-    ON CONFLICT (team_username, company_id) DO UPDATE SET price = EXCLUDED.price, count = EXCLUDED.count
-  `;
+  await opSetBid(u, c, p, n);
   refresh();
 }
 
@@ -225,16 +191,7 @@ export async function clearBid(username: string, companyId: number) {
   await requireAdmin();
   const u = assertString(username, "username");
   const c = assertInt(companyId, "companyId");
-
-  const existing = (await sql`
-    SELECT price, count FROM bids WHERE team_username = ${u} AND company_id = ${c}
-  `) as { price: number; count: number }[];
-
-  if (existing[0]) {
-    const refundAmt = existing[0].price * existing[0].count;
-    await sql`UPDATE teams SET seed = seed + ${refundAmt} WHERE username = ${u}`;
-  }
-  await sql`DELETE FROM bids WHERE team_username = ${u} AND company_id = ${c}`;
+  await opClearBid(u, c);
   refresh();
 }
 

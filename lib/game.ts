@@ -134,3 +134,75 @@ export async function settleStockRound(round: string): Promise<void> {
     `;
   }
 }
+
+// ===== 매칭권 입찰 (한 팀, 한 회사 = 한 가격) =====
+
+export async function opSetBid(
+  username: string,
+  companyId: number,
+  price: number,
+  count: number,
+): Promise<void> {
+  if (!Number.isInteger(price) || price < 0) {
+    throw new Error("가격은 0 이상의 정수여야 합니다");
+  }
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error("개수는 1 이상의 정수여야 합니다");
+  }
+
+  const companyRows = (await sql`
+    SELECT min_order_price FROM companies WHERE id = ${companyId}
+  `) as { min_order_price: number }[];
+  if (!companyRows[0]) throw new Error("회사를 찾을 수 없습니다");
+  if (price < companyRows[0].min_order_price) {
+    throw new Error(
+      `최소 주문 금액(${companyRows[0].min_order_price}) 이상이어야 합니다`,
+    );
+  }
+
+  const existing = (await sql`
+    SELECT price, count FROM bids
+    WHERE team_username = ${username} AND company_id = ${companyId}
+  `) as { price: number; count: number }[];
+  const prevTotal = existing[0] ? existing[0].price * existing[0].count : 0;
+  const newTotal = price * count;
+  const delta = newTotal - prevTotal;
+
+  if (delta > 0) {
+    const teamRows = (await sql`
+      SELECT seed FROM teams WHERE username = ${username}
+    `) as { seed: number }[];
+    const seed = teamRows[0]?.seed ?? 0;
+    if (seed < delta) {
+      throw new Error(`seed 가 부족합니다 (보유 ${seed}, 추가 필요 ${delta})`);
+    }
+  }
+
+  if (delta !== 0) {
+    await sql`UPDATE teams SET seed = seed - ${delta} WHERE username = ${username}`;
+  }
+  await sql`
+    INSERT INTO bids (team_username, company_id, price, count)
+    VALUES (${username}, ${companyId}, ${price}, ${count})
+    ON CONFLICT (team_username, company_id)
+    DO UPDATE SET price = EXCLUDED.price, count = EXCLUDED.count
+  `;
+}
+
+export async function opClearBid(
+  username: string,
+  companyId: number,
+): Promise<void> {
+  const existing = (await sql`
+    SELECT price, count FROM bids
+    WHERE team_username = ${username} AND company_id = ${companyId}
+  `) as { price: number; count: number }[];
+
+  if (existing[0]) {
+    const refund = existing[0].price * existing[0].count;
+    await sql`UPDATE teams SET seed = seed + ${refund} WHERE username = ${username}`;
+  }
+  await sql`
+    DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}
+  `;
+}

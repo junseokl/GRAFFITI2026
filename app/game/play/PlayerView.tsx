@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   playerSetInvestment,
   playerClearInvestment,
+  playerSetBid,
+  playerClearBid,
 } from "@/app/actions/player";
-import type { Company, GameData, Investment } from "./types";
+import type { Bid, Company, GameData, Investment } from "./types";
 import { ROUND_LABELS, PHASE_LABELS, latestSettledRound } from "./types";
 import { SettledResultsPanel, TicketHoldingsTable } from "./shared";
 
@@ -86,6 +88,15 @@ export function PlayerView({
               i.round === state.current_round &&
               i.team_username === username,
           )}
+          seed={myTeam.seed}
+          run={run}
+        />
+      )}
+
+      {state?.current_phase === "matching" && myTeam && (
+        <BidSection
+          companies={data.companies}
+          bids={data.bids}
           seed={myTeam.seed}
           run={run}
         />
@@ -274,5 +285,119 @@ function MyResultsPanel({
         </strong>
       </p>
     </section>
+  );
+}
+
+// ===== 매칭권 단계: 입찰하기 =====
+
+function BidSection({
+  companies,
+  bids,
+  seed,
+  run,
+}: {
+  companies: Company[];
+  bids: Bid[];
+  seed: number;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const bidTotal = bids.reduce((s, b) => s + b.price * b.count, 0);
+
+  return (
+    <section className="mb-6 p-4 border border-green-300 bg-green-50 rounded">
+      <h2 className="text-lg font-bold mb-1">매칭권 구매</h2>
+      <p className="text-sm text-gray-700 mb-3">
+        남은 seed <strong>{seed.toLocaleString()}원</strong> · 현재 입찰에 묶인
+        금액 {bidTotal.toLocaleString()}원
+      </p>
+
+      {companies.length === 0 ? (
+        <p className="text-sm text-gray-500">아직 등록된 회사가 없습니다.</p>
+      ) : (
+        <div className="space-y-2">
+          {companies.map((c) => {
+            const bid = bids.find((b) => b.company_id === c.id);
+            return (
+              <BidRow
+                key={`${c.id}-${bid?.price ?? 0}-${bid?.count ?? 0}`}
+                company={c}
+                currentBid={bid ?? null}
+                run={run}
+              />
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-3 text-xs text-gray-500">
+        가격은 회사 최소 주문 금액 이상이어야 합니다. 한 회사에는 하나의
+        가격으로만 입찰할 수 있고, 개수는 자유입니다. 입찰하면 (가격 × 개수)
+        만큼 seed 에서 즉시 차감되고, 취소하면 전액 되돌아옵니다. 최종 매칭권
+        획득·정산은 admin 이 처리합니다.
+      </p>
+    </section>
+  );
+}
+
+function BidRow({
+  company,
+  currentBid,
+  run,
+}: {
+  company: Company;
+  currentBid: Bid | null;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [price, setPrice] = useState(
+    currentBid ? String(currentBid.price) : "",
+  );
+  const [count, setCount] = useState(
+    currentBid ? String(currentBid.count) : "",
+  );
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="w-40 font-semibold">{company.name}</span>
+      <span className="text-xs text-gray-500 w-28">
+        최소 {company.min_order_price.toLocaleString()}원
+      </span>
+      <span className="text-xs text-gray-600 w-44">
+        현재 입찰:{" "}
+        {currentBid
+          ? `${currentBid.price.toLocaleString()}원 × ${currentBid.count}개`
+          : "없음"}
+      </span>
+      <input
+        type="number"
+        placeholder="가격"
+        value={price}
+        onChange={(e) => setPrice(e.target.value)}
+        className="border border-gray-300 px-2 py-1 rounded w-28"
+      />
+      <input
+        type="number"
+        placeholder="개수"
+        value={count}
+        onChange={(e) => setCount(e.target.value)}
+        className="border border-gray-300 px-2 py-1 rounded w-24"
+      />
+      <button
+        type="button"
+        onClick={() =>
+          run(() => playerSetBid(company.id, Number(price), Number(count)))
+        }
+        className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
+      >
+        입찰
+      </button>
+      {currentBid && (
+        <button
+          type="button"
+          onClick={() => run(() => playerClearBid(company.id))}
+          className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm"
+        >
+          취소
+        </button>
+      )}
+    </div>
   );
 }
