@@ -11,6 +11,7 @@ import {
   opClearInvestment,
   opSetBid,
   opClearBid,
+  opSellTickets,
 } from "@/lib/game";
 
 const ROUNDS = ["seed", "series-a", "series-b", "series-c", "ended"] as const;
@@ -243,26 +244,6 @@ export async function sellTickets(
   const u = assertString(username, "username");
   const c = assertInt(companyId, "companyId");
   const n = assertInt(count, "count", { min: 1 });
-
-  const ticketRows = (await sql`
-    SELECT count FROM tickets WHERE team_username = ${u} AND company_id = ${c}
-  `) as { count: number }[];
-  const owned = ticketRows[0]?.count ?? 0;
-  if (owned < n) {
-    throw new Error(`보유 매칭권 부족 (현재 ${owned}, 요청 ${n})`);
-  }
-
-  const companyRows = (await sql`
-    SELECT min_order_price FROM companies WHERE id = ${c}
-  `) as { min_order_price: number }[];
-  if (!companyRows[0]) throw new Error("회사를 찾을 수 없습니다");
-  const minPrice = companyRows[0].min_order_price;
-
-  const refundAmt = Math.floor(minPrice * n * 0.8);
-  await sql`UPDATE teams SET seed = seed + ${refundAmt} WHERE username = ${u}`;
-  await sql`
-    UPDATE tickets SET count = count - ${n}
-    WHERE team_username = ${u} AND company_id = ${c}
-  `;
+  await opSellTickets(u, c, n);
   refresh();
 }

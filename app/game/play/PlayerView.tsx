@@ -7,8 +7,9 @@ import {
   playerClearInvestment,
   playerSetBid,
   playerClearBid,
+  playerSellTickets,
 } from "@/app/actions/player";
-import type { Bid, Company, GameData, Investment } from "./types";
+import type { Bid, Company, GameData, Investment, Ticket } from "./types";
 import { ROUND_LABELS, PHASE_LABELS, latestSettledRound } from "./types";
 import { SettledResultsPanel, TicketHoldingsTable } from "./shared";
 
@@ -98,6 +99,14 @@ export function PlayerView({
           companies={data.companies}
           bids={data.bids}
           seed={myTeam.seed}
+          run={run}
+        />
+      )}
+
+      {state?.current_phase === "matching" && myTeam && (
+        <SellSection
+          companies={data.companies}
+          tickets={data.tickets.filter((t) => t.team_username === username)}
           run={run}
         />
       )}
@@ -354,49 +363,166 @@ function BidRow({
     currentBid ? String(currentBid.count) : "",
   );
 
+  const priceNum = Number(price);
+  const countNum = Number(count);
+  const priceValid = price.trim() !== "" && Number.isFinite(priceNum);
+  const countValid =
+    count.trim() !== "" && Number.isInteger(countNum) && countNum >= 1;
+  const tooLow = priceValid && priceNum < company.min_order_price;
+  const cost = (priceValid ? priceNum : 0) * (countValid ? countNum : 0);
+  const canBid = priceValid && countValid && !tooLow;
+
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="border border-gray-200 rounded p-2 bg-white">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-40 font-semibold">{company.name}</span>
+        <span className="text-xs text-gray-500">
+          최소 {company.min_order_price.toLocaleString()}원
+        </span>
+        <span className="text-xs text-gray-600">
+          현재 입찰:{" "}
+          {currentBid
+            ? `${currentBid.price.toLocaleString()}원 × ${currentBid.count}개 = ${(
+                currentBid.price * currentBid.count
+              ).toLocaleString()}원`
+            : "없음"}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap mt-1">
+        <input
+          type="number"
+          placeholder="가격"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          className="border border-gray-300 px-2 py-1 rounded w-28"
+        />
+        <input
+          type="number"
+          placeholder="개수"
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          className="border border-gray-300 px-2 py-1 rounded w-24"
+        />
+        <button
+          type="button"
+          disabled={!canBid}
+          onClick={() =>
+            run(() => playerSetBid(company.id, priceNum, countNum))
+          }
+          className="px-3 py-1 bg-gray-800 text-white rounded text-sm disabled:opacity-40"
+        >
+          입찰
+        </button>
+        {currentBid && (
+          <button
+            type="button"
+            onClick={() => run(() => playerClearBid(company.id))}
+            className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm"
+          >
+            취소
+          </button>
+        )}
+        <span className="text-sm">
+          이 회사에 쓸 금액: <strong>{cost.toLocaleString()}원</strong>
+        </span>
+        {tooLow && (
+          <span className="text-red-600 text-sm font-semibold">
+            금액이 낮습니다
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== 매칭권 단계: 판매하기 (80% 환불) =====
+
+function SellSection({
+  companies,
+  tickets,
+  run,
+}: {
+  companies: Company[];
+  tickets: Ticket[];
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const owned = companies
+    .map((c) => ({
+      company: c,
+      count: tickets.find((t) => t.company_id === c.id)?.count ?? 0,
+    }))
+    .filter((o) => o.count > 0);
+
+  return (
+    <section className="mb-6 p-4 border border-amber-300 bg-amber-50 rounded">
+      <h2 className="text-lg font-bold mb-1">매칭권 판매</h2>
+      <p className="text-sm text-gray-700 mb-3">
+        보유한 매칭권을 현재 회사 최소 주문 금액의 80% 가격으로 되팔 수
+        있습니다.
+      </p>
+      {owned.length === 0 ? (
+        <p className="text-sm text-gray-500">보유한 매칭권이 없습니다.</p>
+      ) : (
+        <div className="space-y-2">
+          {owned.map((o) => (
+            <SellRow
+              key={`${o.company.id}-${o.count}`}
+              company={o.company}
+              owned={o.count}
+              run={run}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SellRow({
+  company,
+  owned,
+  run,
+}: {
+  company: Company;
+  owned: number;
+  run: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [count, setCount] = useState("");
+
+  const countNum = Number(count);
+  const countEntered = count.trim() !== "" && Number.isInteger(countNum);
+  const tooMany = countEntered && countNum > owned;
+  const valid = countEntered && countNum >= 1 && countNum <= owned;
+  const refund = valid
+    ? Math.floor(company.min_order_price * countNum * 0.8)
+    : 0;
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap border border-gray-200 rounded p-2 bg-white">
       <span className="w-40 font-semibold">{company.name}</span>
-      <span className="text-xs text-gray-500 w-28">
-        최소 {company.min_order_price.toLocaleString()}원
-      </span>
-      <span className="text-xs text-gray-600 w-44">
-        현재 입찰:{" "}
-        {currentBid
-          ? `${currentBid.price.toLocaleString()}원 × ${currentBid.count}개`
-          : "없음"}
+      <span className="text-xs text-gray-500">
+        보유 {owned}개 · 최소가 {company.min_order_price.toLocaleString()}원
       </span>
       <input
         type="number"
-        placeholder="가격"
-        value={price}
-        onChange={(e) => setPrice(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-28"
-      />
-      <input
-        type="number"
-        placeholder="개수"
+        placeholder="판매 개수"
         value={count}
         onChange={(e) => setCount(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-24"
+        className="border border-gray-300 px-2 py-1 rounded w-28"
       />
       <button
         type="button"
-        onClick={() =>
-          run(() => playerSetBid(company.id, Number(price), Number(count)))
-        }
-        className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
+        disabled={!valid}
+        onClick={() => run(() => playerSellTickets(company.id, countNum))}
+        className="px-3 py-1 bg-gray-800 text-white rounded text-sm disabled:opacity-40"
       >
-        입찰
+        판매
       </button>
-      {currentBid && (
-        <button
-          type="button"
-          onClick={() => run(() => playerClearBid(company.id))}
-          className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm"
-        >
-          취소
-        </button>
+      <span className="text-sm">
+        예상 환불: <strong>{refund.toLocaleString()}원</strong>
+      </span>
+      {tooMany && (
+        <span className="text-red-600 text-sm">보유 개수보다 많습니다</span>
       )}
     </div>
   );

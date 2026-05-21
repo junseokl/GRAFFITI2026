@@ -9,6 +9,7 @@ import {
   opClearInvestment,
   opSetBid,
   opClearBid,
+  opSellTickets,
 } from "@/lib/game";
 
 // 플레이어 본인 팀 투자. username 은 세션에서만 가져오므로 남의 팀은 조작 불가.
@@ -77,5 +78,18 @@ export async function playerClearBid(companyId: number) {
   }
 
   await opClearBid(username, companyId);
+  revalidatePath("/game/play");
+}
+
+export async function playerSellTickets(companyId: number, count: number) {
+  const username = await requirePlayer();
+  if (!Number.isInteger(companyId)) throw new Error("잘못된 회사");
+
+  const state = await readGameState();
+  if (state.current_phase !== "matching") {
+    throw new Error("지금은 매칭권을 팔 수 있는 단계가 아닙니다");
+  }
+
+  await opSellTickets(username, companyId, count);
   revalidatePath("/game/play");
 }

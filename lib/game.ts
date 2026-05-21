@@ -206,3 +206,35 @@ export async function opClearBid(
     DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}
   `;
 }
+
+// 매칭권 자발적 판매: 현재 최소 주문 금액 × 개수 의 80% 환불
+export async function opSellTickets(
+  username: string,
+  companyId: number,
+  count: number,
+): Promise<void> {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error("개수는 1 이상의 정수여야 합니다");
+  }
+
+  const ticketRows = (await sql`
+    SELECT count FROM tickets
+    WHERE team_username = ${username} AND company_id = ${companyId}
+  `) as { count: number }[];
+  const owned = ticketRows[0]?.count ?? 0;
+  if (owned < count) {
+    throw new Error(`보유 매칭권이 부족합니다 (보유 ${owned}, 요청 ${count})`);
+  }
+
+  const companyRows = (await sql`
+    SELECT min_order_price FROM companies WHERE id = ${companyId}
+  `) as { min_order_price: number }[];
+  if (!companyRows[0]) throw new Error("회사를 찾을 수 없습니다");
+
+  const refund = Math.floor(companyRows[0].min_order_price * count * 0.8);
+  await sql`UPDATE teams SET seed = seed + ${refund} WHERE username = ${username}`;
+  await sql`
+    UPDATE tickets SET count = count - ${count}
+    WHERE team_username = ${username} AND company_id = ${companyId}
+  `;
+}
