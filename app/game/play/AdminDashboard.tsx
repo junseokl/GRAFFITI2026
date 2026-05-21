@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   setGameState,
+  advanceToNextPhase,
   addCompany,
   updateCompany,
   deleteCompany,
@@ -12,7 +13,6 @@ import {
   setTeamTickets,
   setInvestment,
   clearInvestment,
-  closeStockPhaseWithYields,
   setBid,
   clearBid,
   awardBid,
@@ -20,9 +20,9 @@ import {
   sellTickets,
 } from "@/app/actions/admin";
 import type {
-  AdminViewData,
   Bid,
   Company,
+  GameData,
   GameState,
   Investment,
   Phase,
@@ -30,11 +30,12 @@ import type {
   Team,
   Ticket,
 } from "./types";
-import { ROUND_LABELS, PHASE_LABELS } from "./types";
+import { ROUND_LABELS, PHASE_LABELS, describeNext } from "./types";
+import { SettledResultsPanel, TicketHoldingsTable } from "./shared";
 
 type RunFn = (action: () => Promise<unknown>) => Promise<void>;
 
-export function AdminDashboard({ data }: { data: AdminViewData }) {
+export function AdminDashboard({ data }: { data: GameData }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -64,7 +65,8 @@ export function AdminDashboard({ data }: { data: AdminViewData }) {
     );
   }
 
-  const phase = data.state.current_phase;
+  const state = data.state;
+  const phase = state.current_phase;
 
   return (
     <main className="max-w-6xl mx-auto px-5 py-8">
@@ -84,8 +86,8 @@ export function AdminDashboard({ data }: { data: AdminViewData }) {
       )}
 
       <GameStateSection
-        key={`${data.state.current_round}-${data.state.current_phase}`}
-        state={data.state}
+        key={`${state.current_round}-${state.current_phase}`}
+        state={state}
         run={run}
       />
       <CompaniesSection companies={data.companies} run={run} />
@@ -99,6 +101,7 @@ export function AdminDashboard({ data }: { data: AdminViewData }) {
 
       {phase === "stock" && (
         <StockPhaseSection
+          round={state.current_round}
           teams={data.teams}
           companies={data.companies}
           investments={data.investments}
@@ -115,7 +118,57 @@ export function AdminDashboard({ data }: { data: AdminViewData }) {
           run={run}
         />
       )}
+
+      <SettledResultsPanel
+        companies={data.companies}
+        investments={data.investments}
+        roundResults={data.roundResults}
+      />
+
+      <TicketHoldingsTable
+        companies={data.companies}
+        teams={data.teams}
+        tickets={data.tickets}
+      />
+
+      <AdvanceButton state={state} run={run} />
     </main>
+  );
+}
+
+// ============================================================
+// 다음 단계로 넘어가기 버튼 (맨 아래 오른쪽)
+// ============================================================
+
+function AdvanceButton({ state, run }: { state: GameState; run: RunFn }) {
+  const ended = state.current_round === "ended";
+  return (
+    <div className="mt-8 flex justify-end items-center gap-3">
+      {!ended && (
+        <span className="text-sm text-gray-600">
+          다음: {describeNext(state.current_round, state.current_phase)}
+        </span>
+      )}
+      <button
+        type="button"
+        disabled={ended}
+        onClick={() => {
+          if (
+            confirm(
+              `다음 단계로 넘어갈까요?\n→ ${describeNext(
+                state.current_round,
+                state.current_phase,
+              )}`,
+            )
+          ) {
+            run(() => advanceToNextPhase());
+          }
+        }}
+        className="px-5 py-2 bg-gray-900 text-white rounded disabled:opacity-40"
+      >
+        다음 단계로 넘어가기 ▶
+      </button>
+    </div>
   );
 }
 
@@ -165,8 +218,11 @@ function GameStateSection({ state, run }: { state: GameState; run: RunFn }) {
           onClick={() => run(() => setGameState(round, phase))}
           className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
         >
-          상태 변경
+          상태 직접 변경
         </button>
+        <span className="text-xs text-gray-500">
+          (정상 진행은 맨 아래 "다음 단계로" 버튼 사용 — 이건 수동 보정용)
+        </span>
       </div>
     </section>
   );
@@ -320,10 +376,7 @@ function TeamsSection({
   return (
     <section className="mb-6 p-4 border border-gray-300 rounded">
       <h2 className="text-lg font-bold mb-3">팀</h2>
-      <AddTeamForm
-        unregisteredUsernames={unregistered}
-        run={run}
-      />
+      <AddTeamForm unregisteredUsernames={unregistered} run={run} />
 
       <div className="mt-4 overflow-x-auto">
         {teams.length === 0 ? (
@@ -496,25 +549,31 @@ function NumberEditor({
 // ============================================================
 
 function StockPhaseSection({
+  round,
   teams,
   companies,
   investments,
   run,
 }: {
+  round: Round;
   teams: Team[];
   companies: Company[];
   investments: Investment[];
   run: RunFn;
 }) {
+  const roundInvestments = investments.filter((i) => i.round === round);
+
   return (
     <section className="mb-6 p-4 border border-blue-300 bg-blue-50 rounded">
-      <h2 className="text-lg font-bold mb-3">주식 단계 — 투자 관리</h2>
+      <h2 className="text-lg font-bold mb-1">주식 단계 — 투자 관리</h2>
+      <p className="text-xs text-gray-600 mb-3">
+        팀이 직접 투자할 수도 있고, admin 이 여기서 대신 입력할 수도 있습니다.
+        정산은 맨 아래 "다음 단계로" 버튼이 처리합니다 (현재 임시 10%).
+      </p>
 
       <div className="overflow-x-auto">
         {teams.length === 0 || companies.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            팀과 회사를 먼저 추가하세요.
-          </p>
+          <p className="text-sm text-gray-500">팀과 회사를 먼저 추가하세요.</p>
         ) : (
           <table className="w-full text-sm bg-white">
             <thead>
@@ -530,7 +589,7 @@ function StockPhaseSection({
             </thead>
             <tbody>
               {teams.map((t) => {
-                const teamInvestments = investments.filter(
+                const teamInvestments = roundInvestments.filter(
                   (i) => i.team_username === t.username,
                 );
                 const total = teamInvestments.reduce(
@@ -571,8 +630,6 @@ function StockPhaseSection({
           </table>
         )}
       </div>
-
-      <CloseStockPhaseForm companies={companies} run={run} />
     </section>
   );
 }
@@ -599,9 +656,7 @@ function InvestmentCell({
       />
       <button
         type="button"
-        onClick={() =>
-          run(() => setInvestment(username, companyId, Number(v)))
-        }
+        onClick={() => run(() => setInvestment(username, companyId, Number(v)))}
         className="px-1 py-1 bg-gray-200 rounded text-xs"
       >
         저장
@@ -615,63 +670,6 @@ function InvestmentCell({
           취소
         </button>
       )}
-    </div>
-  );
-}
-
-function CloseStockPhaseForm({
-  companies,
-  run,
-}: {
-  companies: Company[];
-  run: RunFn;
-}) {
-  const [yields, setYields] = useState<Record<number, string>>({});
-
-  if (companies.length === 0) return null;
-
-  return (
-    <div className="mt-4 p-3 bg-white border border-gray-300 rounded">
-      <h3 className="font-bold mb-2">주식 단계 종료 (회사별 수익률 입력 → 정산)</h3>
-      <div className="space-y-1">
-        {companies.map((c) => (
-          <div key={c.id} className="flex gap-2 items-center">
-            <label className="w-40 text-sm">{c.name}</label>
-            <input
-              type="number"
-              placeholder="수익률"
-              value={yields[c.id] ?? ""}
-              onChange={(e) =>
-                setYields({ ...yields, [c.id]: e.target.value })
-              }
-              className="border border-gray-300 px-2 py-1 rounded w-32"
-            />
-            <span className="text-xs text-gray-500">% (음수 가능)</span>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={() => {
-          if (
-            !confirm(
-              "주식 단계를 종료하고 수익률을 적용할까요? 모든 투자가 정산되어 사라집니다.",
-            )
-          ) {
-            return;
-          }
-          const map: Record<string, number> = {};
-          for (const c of companies) {
-            const raw = yields[c.id];
-            map[String(c.id)] = raw === "" || raw === undefined ? 0 : Number(raw);
-          }
-          run(() => closeStockPhaseWithYields(map));
-          setYields({});
-        }}
-        className="mt-3 px-3 py-1 bg-gray-800 text-white rounded text-sm"
-      >
-        종료 & 정산
-      </button>
     </div>
   );
 }
@@ -697,12 +695,9 @@ function MatchingPhaseSection({
     <section className="mb-6 p-4 border border-green-300 bg-green-50 rounded">
       <h2 className="text-lg font-bold mb-3">매칭권 단계</h2>
 
-      {/* 입찰 매트릭스 */}
       <div className="overflow-x-auto mb-4">
         {teams.length === 0 || companies.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            팀과 회사를 먼저 추가하세요.
-          </p>
+          <p className="text-sm text-gray-500">팀과 회사를 먼저 추가하세요.</p>
         ) : (
           <table className="w-full text-sm bg-white">
             <thead>
@@ -752,10 +747,8 @@ function MatchingPhaseSection({
         )}
       </div>
 
-      {/* 입찰 정산 */}
       <BidResolutionList bids={bids} companies={companies} run={run} />
 
-      {/* 자발적 판매 */}
       <TicketSellForm
         teams={teams}
         companies={companies}
@@ -804,9 +797,7 @@ function BidCell({
         <button
           type="button"
           onClick={() =>
-            run(() =>
-              setBid(username, companyId, Number(price), Number(count)),
-            )
+            run(() => setBid(username, companyId, Number(price), Number(count)))
           }
           className="px-1 py-1 bg-gray-200 rounded text-xs flex-1"
         >
@@ -837,7 +828,6 @@ function BidResolutionList({
 }) {
   if (bids.length === 0) return null;
 
-  // 회사별로 그룹핑 + 가격 내림차순 정렬해서 admin 이 top 2 식별 쉽게
   const grouped: Record<number, Bid[]> = {};
   for (const b of bids) {
     if (!grouped[b.company_id]) grouped[b.company_id] = [];
@@ -890,9 +880,7 @@ function BidResolutionList({
                         <button
                           type="button"
                           onClick={() =>
-                            run(() =>
-                              awardBid(b.team_username, b.company_id),
-                            )
+                            run(() => awardBid(b.team_username, b.company_id))
                           }
                           className="px-2 py-1 bg-green-200 rounded text-xs"
                         >
@@ -918,8 +906,8 @@ function BidResolutionList({
           </div>
         ))}
       <p className="text-xs text-gray-500 mt-2">
-        상위 2개는 초록 배경. "확정" 은 입찰 개수를 매칭권으로 전환(추가
-        환불 없음), "50% 환불" 은 패자 처리 (가격×개수의 50% 환불 + 입찰 삭제).
+        상위 2개는 초록 배경. "확정" 은 입찰 개수를 매칭권으로 전환(추가 환불
+        없음), "50% 환불" 은 패자 처리 (가격×개수의 50% 환불 + 입찰 삭제).
       </p>
     </div>
   );
@@ -944,13 +932,16 @@ function TicketSellForm({
     username && companyId
       ? tickets.find(
           (t) =>
-            t.team_username === username && t.company_id === Number(companyId),
+            t.team_username === username &&
+            t.company_id === Number(companyId),
         )?.count ?? 0
       : null;
 
   return (
     <div className="mt-4 p-3 bg-white border border-gray-300 rounded">
-      <h3 className="font-bold mb-2">매칭권 자발적 판매 (최소 주문 금액의 80% 환불)</h3>
+      <h3 className="font-bold mb-2">
+        매칭권 자발적 판매 (최소 주문 금액의 80% 환불)
+      </h3>
       <div className="flex gap-2 items-center flex-wrap">
         <select
           value={username}

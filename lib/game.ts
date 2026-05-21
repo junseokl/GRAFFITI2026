@@ -1,0 +1,136 @@
+import { sql } from "@/lib/db";
+
+// 플레이 가능한 라운드 순서 ('ended' 는 제외)
+export const ROUND_ORDER = [
+  "seed",
+  "series-a",
+  "series-b",
+  "series-c",
+] as const;
+
+// 주식 단계 정산 시 적용하는 임시 수익률 (%). 추후 공식으로 교체 예정.
+export const FLAT_YIELD_PCT = 10;
+
+export type GameStateRow = {
+  current_round: string;
+  current_phase: string;
+};
+
+export async function readGameState(): Promise<GameStateRow> {
+  const rows = (await sql`
+    SELECT current_round, current_phase FROM game_state WHERE id = 1
+  `) as GameStateRow[];
+  if (!rows[0]) {
+    throw new Error("게임 상태가 없습니다 — npm run db:init 을 실행하세요.");
+  }
+  return rows[0];
+}
+
+// 다음 단계 계산: idle → stock → results → matching → (다음 라운드) idle ...
+export function computeNextState(
+  round: string,
+  phase: string,
+): { round: string; phase: string } {
+  if (round === "ended") return { round, phase };
+  if (phase === "idle") return { round, phase: "stock" };
+  if (phase === "stock") return { round, phase: "results" };
+  if (phase === "results") return { round, phase: "matching" };
+  if (phase === "matching") {
+    const idx = (ROUND_ORDER as readonly string[]).indexOf(round);
+    if (idx < 0 || idx >= ROUND_ORDER.length - 1) {
+      return { round: "ended", phase: "idle" };
+    }
+    return { round: ROUND_ORDER[idx + 1], phase: "idle" };
+  }
+  return { round, phase };
+}
+
+// ===== 투자 (round 별) =====
+
+export async function opSetInvestment(
+  round: string,
+  username: string,
+  companyId: number,
+  amount: number,
+): Promise<void> {
+  if (!Number.isInteger(amount) || amount < 0) {
+    throw new Error("투자 금액은 0 이상의 정수여야 합니다");
+  }
+
+  const existing = (await sql`
+    SELECT amount FROM investments
+    WHERE round = ${round} AND team_username = ${username} AND company_id = ${companyId}
+  `) as { amount: number }[];
+  const prev = existing[0]?.amount ?? 0;
+  const delta = amount - prev;
+
+  if (delta > 0) {
+    const teamRows = (await sql`
+      SELECT seed FROM teams WHERE username = ${username}
+    `) as { seed: number }[];
+    const seed = teamRows[0]?.seed ?? 0;
+    if (seed < delta) {
+      throw new Error(`seed 가 부족합니다 (보유 ${seed}, 추가 필요 ${delta})`);
+    }
+  }
+
+  if (delta !== 0) {
+    await sql`UPDATE teams SET seed = seed - ${delta} WHERE username = ${username}`;
+  }
+  await sql`
+    INSERT INTO investments (round, team_username, company_id, amount)
+    VALUES (${round}, ${username}, ${companyId}, ${amount})
+    ON CONFLICT (round, team_username, company_id)
+    DO UPDATE SET amount = EXCLUDED.amount
+  `;
+}
+
+export async function opClearInvestment(
+  round: string,
+  username: string,
+  companyId: number,
+): Promise<void> {
+  const existing = (await sql`
+    SELECT amount FROM investments
+    WHERE round = ${round} AND team_username = ${username} AND company_id = ${companyId}
+  `) as { amount: number }[];
+  const prev = existing[0]?.amount ?? 0;
+
+  if (prev > 0) {
+    await sql`UPDATE teams SET seed = seed + ${prev} WHERE username = ${username}`;
+  }
+  await sql`
+    DELETE FROM investments
+    WHERE round = ${round} AND team_username = ${username} AND company_id = ${companyId}
+  `;
+}
+
+// 주식 단계 정산: 해당 라운드 투자에 FLAT_YIELD_PCT 적용 → seed 지급, round_results 기록.
+// 이미 정산된 라운드면 (round_results 존재) 아무것도 하지 않음 (중복 정산 방지).
+export async function settleStockRound(round: string): Promise<void> {
+  const already = (await sql`
+    SELECT 1 FROM round_results WHERE round = ${round} LIMIT 1
+  `) as unknown[];
+  if (already.length > 0) return;
+
+  const companies = (await sql`SELECT id FROM companies`) as { id: number }[];
+
+  for (const c of companies) {
+    await sql`
+      UPDATE teams t
+      SET seed = t.seed + GREATEST(
+        0,
+        FLOOR(i.amount * (1 + (${FLAT_YIELD_PCT}::numeric) / 100.0))::INTEGER
+      )
+      FROM investments i
+      WHERE t.username = i.team_username
+        AND i.company_id = ${c.id}
+        AND i.round = ${round}
+    `;
+    await sql`
+      INSERT INTO round_results (round, company_id, yield_pct)
+      VALUES (${round}, ${c.id}, ${FLAT_YIELD_PCT})
+      ON CONFLICT (round, company_id) DO UPDATE SET yield_pct = EXCLUDED.yield_pct
+    `;
+  }
+}

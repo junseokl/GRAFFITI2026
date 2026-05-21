@@ -17,6 +17,7 @@ const sql = neon(url);
 
 const drops = [
   `DROP TABLE IF EXISTS bids CASCADE`,
+  `DROP TABLE IF EXISTS round_results CASCADE`,
   `DROP TABLE IF EXISTS investments CASCADE`,
   `DROP TABLE IF EXISTS tickets CASCADE`,
   `DROP TABLE IF EXISTS teams CASCADE`,

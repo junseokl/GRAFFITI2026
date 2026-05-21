@@ -1,5 +1,6 @@
 // DB 스키마 초기화 스크립트
 // 사용법: npm run db:init
+// 스키마를 바꾼 뒤에는 npm run db:reset 후 npm run db:init 권장
 import nextEnv from "@next/env";
 import { neon } from "@neondatabase/serverless";
 
@@ -21,7 +22,7 @@ const statements = [
      current_phase TEXT NOT NULL DEFAULT 'idle',
      CHECK (id = 1),
      CHECK (current_round IN ('seed','series-a','series-b','series-c','ended')),
-     CHECK (current_phase IN ('idle','stock','matching'))
+     CHECK (current_phase IN ('idle','stock','results','matching'))
    )`,
 
   `INSERT INTO game_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
@@ -45,11 +46,21 @@ const statements = [
      PRIMARY KEY (team_username, company_id)
    )`,
 
+  // 라운드별 투자 내역. 정산 후에도 삭제하지 않고 history 로 남김.
   `CREATE TABLE IF NOT EXISTS investments (
+     round TEXT NOT NULL,
      team_username TEXT NOT NULL REFERENCES teams(username) ON DELETE CASCADE,
      company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
      amount INTEGER NOT NULL CHECK (amount >= 0),
-     PRIMARY KEY (team_username, company_id)
+     PRIMARY KEY (round, team_username, company_id)
+   )`,
+
+  // 라운드별 회사 수익률 (정산 시 기록)
+  `CREATE TABLE IF NOT EXISTS round_results (
+     round TEXT NOT NULL,
+     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+     yield_pct INTEGER NOT NULL,
+     PRIMARY KEY (round, company_id)
    )`,
 
   `CREATE TABLE IF NOT EXISTS bids (

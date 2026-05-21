@@ -3,12 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/permissions";
+import {
+  readGameState,
+  computeNextState,
+  settleStockRound,
+  opSetInvestment,
+  opClearInvestment,
+} from "@/lib/game";
 
 const ROUNDS = ["seed", "series-a", "series-b", "series-c", "ended"] as const;
-type Round = (typeof ROUNDS)[number];
-
-const PHASES = ["idle", "stock", "matching"] as const;
-type Phase = (typeof PHASES)[number];
+const PHASES = ["idle", "stock", "results", "matching"] as const;
 
 function assertInt(
   v: unknown,
@@ -50,6 +54,25 @@ export async function setGameState(round: string, phase: string) {
     throw new Error("잘못된 phase 값");
   }
   await sql`UPDATE game_state SET current_round = ${round}, current_phase = ${phase} WHERE id = 1`;
+  refresh();
+}
+
+// "다음 단계로 넘어가기": idle→stock→results→matching→(다음 라운드)
+// stock → results 로 넘어갈 때 자동 정산.
+export async function advanceToNextPhase() {
+  await requireAdmin();
+  const { current_round, current_phase } = await readGameState();
+
+  if (current_phase === "stock") {
+    await settleStockRound(current_round);
+  }
+
+  const next = computeNextState(current_round, current_phase);
+  await sql`
+    UPDATE game_state
+    SET current_round = ${next.round}, current_phase = ${next.phase}
+    WHERE id = 1
+  `;
   refresh();
 }
 
@@ -120,7 +143,7 @@ export async function setTeamTickets(
   refresh();
 }
 
-// ===== 주식 단계: 투자 set / clear / 정산 =====
+// ===== 주식 단계: 투자 (admin 이 팀 대신 입력) =====
 
 export async function setInvestment(
   username: string,
@@ -131,30 +154,8 @@ export async function setInvestment(
   const u = assertString(username, "username");
   const c = assertInt(companyId, "companyId");
   const a = assertInt(amount, "amount", { min: 0 });
-
-  const existingRows = (await sql`
-    SELECT amount FROM investments WHERE team_username = ${u} AND company_id = ${c}
-  `) as { amount: number }[];
-  const prev = existingRows[0]?.amount ?? 0;
-  const delta = a - prev;
-
-  if (delta > 0) {
-    const teamRows = (await sql`
-      SELECT seed FROM teams WHERE username = ${u}
-    `) as { seed: number }[];
-    const currentSeed = teamRows[0]?.seed ?? 0;
-    if (currentSeed < delta) {
-      throw new Error(`seed 부족 (현재 ${currentSeed}, 필요 ${delta})`);
-    }
-  }
-
-  if (delta !== 0) {
-    await sql`UPDATE teams SET seed = seed - ${delta} WHERE username = ${u}`;
-  }
-  await sql`
-    INSERT INTO investments (team_username, company_id, amount) VALUES (${u}, ${c}, ${a})
-    ON CONFLICT (team_username, company_id) DO UPDATE SET amount = EXCLUDED.amount
-  `;
+  const { current_round } = await readGameState();
+  await opSetInvestment(current_round, u, c, a);
   refresh();
 }
 
@@ -162,43 +163,8 @@ export async function clearInvestment(username: string, companyId: number) {
   await requireAdmin();
   const u = assertString(username, "username");
   const c = assertInt(companyId, "companyId");
-
-  const existing = (await sql`
-    SELECT amount FROM investments WHERE team_username = ${u} AND company_id = ${c}
-  `) as { amount: number }[];
-  const prev = existing[0]?.amount ?? 0;
-
-  if (prev > 0) {
-    await sql`UPDATE teams SET seed = seed + ${prev} WHERE username = ${u}`;
-  }
-  await sql`DELETE FROM investments WHERE team_username = ${u} AND company_id = ${c}`;
-  refresh();
-}
-
-// 주식 단계 정산: 회사별 수익률 입력 → 각 팀 seed 갱신, investments 비우기
-// yields: { [companyId]: yieldPct }  예: { 1: 20, 2: -10 }
-export async function closeStockPhaseWithYields(yields: Record<string, number>) {
-  await requireAdmin();
-
-  for (const [companyIdStr, yieldPctRaw] of Object.entries(yields)) {
-    const cid = assertInt(companyIdStr, "companyId");
-    const pct = Number(yieldPctRaw);
-    if (!Number.isFinite(pct)) {
-      throw new Error(`yield 값이 잘못됨: ${yieldPctRaw}`);
-    }
-    await sql`
-      UPDATE teams t
-      SET seed = t.seed + GREATEST(
-        0,
-        FLOOR(i.amount * (1 + (${pct}::numeric) / 100.0))::INTEGER
-      )
-      FROM investments i
-      WHERE t.username = i.team_username AND i.company_id = ${cid}
-    `;
-  }
-
-  await sql`DELETE FROM investments`;
-  await sql`UPDATE game_state SET current_phase = 'idle' WHERE id = 1`;
+  const { current_round } = await readGameState();
+  await opClearInvestment(current_round, u, c);
   refresh();
 }
 
@@ -216,7 +182,6 @@ export async function setBid(
   const p = assertInt(price, "price", { min: 0 });
   const n = assertInt(count, "count", { min: 1 });
 
-  // 회사 최소 주문 금액 확인
   const companyRows = (await sql`
     SELECT min_order_price FROM companies WHERE id = ${c}
   `) as { min_order_price: number }[];
