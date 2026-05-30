@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { YIELD_CONFIG } from "@/config/yield";
 
 // 플레이 가능한 라운드 순서 ('ended' 는 제외)
 export const ROUND_ORDER = [
@@ -8,8 +9,29 @@ export const ROUND_ORDER = [
   "series-c",
 ] as const;
 
-// 주식 단계 정산 시 적용하는 임시 수익률 (%). 추후 공식으로 교체 예정.
-export const FLAT_YIELD_PCT = 10;
+// ===== 수익률 공식 =====
+// R(M) = ( μ_max − 2·μ_max / (1 + k1·M) ) + ( σ_base + σ_bonus / (1 + k2·M) ) · Z
+//   Z ~ 정규분포 (표준), [-1, 1] 로 잘림
+
+// 표준정규분포 샘플 (Box-Muller). |z|>1 이면 [-1, 1] 안의 값을 얻을 때까지 재시도.
+function sampleTruncatedNormal(): number {
+  for (let i = 0; i < 100; i++) {
+    const u = 1 - Math.random();
+    const v = Math.random();
+    const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    if (z >= -1 && z <= 1) return z;
+  }
+  return 0; // 안전망 — 사실상 도달 불가
+}
+
+// 회사별 총 투자금 M 으로부터 수익률(%) 계산
+function computeYieldPct(M: number): number {
+  const { u_max, k1, k2, sigma_base, sigma_bonus } = YIELD_CONFIG;
+  const mean = u_max - (2 * u_max) / (1 + k1 * M);
+  const sigma = sigma_base + sigma_bonus / (1 + k2 * M);
+  const Z = sampleTruncatedNormal();
+  return mean + sigma * Z;
+}
 
 export type GameStateRow = {
   current_round: string;
@@ -105,7 +127,8 @@ export async function opClearInvestment(
   `;
 }
 
-// 주식 단계 정산: 해당 라운드 투자에 FLAT_YIELD_PCT 적용 → seed 지급, round_results 기록.
+// 주식 단계 정산: 회사별 총 투자금 M 으로 R(M) 을 계산해 수익률을 결정,
+// 모든 투자에 적용하고 round_results 에 기록.
 // 이미 정산된 라운드면 (round_results 존재) 아무것도 하지 않음 (중복 정산 방지).
 export async function settleStockRound(round: string): Promise<void> {
   const already = (await sql`
@@ -116,11 +139,22 @@ export async function settleStockRound(round: string): Promise<void> {
   const companies = (await sql`SELECT id FROM companies`) as { id: number }[];
 
   for (const c of companies) {
+    // 회사별 총 투자금 M 집계
+    const sumRows = (await sql`
+      SELECT COALESCE(SUM(amount), 0)::INTEGER AS m
+      FROM investments
+      WHERE company_id = ${c.id} AND round = ${round}
+    `) as { m: number }[];
+    const M = sumRows[0]?.m ?? 0;
+
+    // 공식으로 수익률 계산 후 정수로 반올림 (round_results.yield_pct 가 INTEGER)
+    const yieldPct = Math.round(computeYieldPct(M));
+
     await sql`
       UPDATE teams t
       SET seed = t.seed + GREATEST(
         0,
-        FLOOR(i.amount * (1 + (${FLAT_YIELD_PCT}::numeric) / 100.0))::INTEGER
+        FLOOR(i.amount * (1 + (${yieldPct}::numeric) / 100.0))::INTEGER
       )
       FROM investments i
       WHERE t.username = i.team_username
@@ -129,7 +163,7 @@ export async function settleStockRound(round: string): Promise<void> {
     `;
     await sql`
       INSERT INTO round_results (round, company_id, yield_pct)
-      VALUES (${round}, ${c.id}, ${FLAT_YIELD_PCT})
+      VALUES (${round}, ${c.id}, ${yieldPct})
       ON CONFLICT (round, company_id) DO UPDATE SET yield_pct = EXCLUDED.yield_pct
     `;
   }

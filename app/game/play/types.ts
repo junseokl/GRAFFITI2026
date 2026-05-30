@@ -98,7 +98,7 @@ export function latestSettledRound(
 export function describeNext(round: Round, phase: Phase): string {
   if (round === "ended") return "게임이 종료되었습니다";
   if (phase === "idle") return `${ROUND_LABELS[round]} · 주식 단계 시작`;
-  if (phase === "stock") return `${ROUND_LABELS[round]} · 결과 발표 (10% 정산)`;
+  if (phase === "stock") return `${ROUND_LABELS[round]} · 결과 발표 (수익률 공식 정산)`;
   if (phase === "results") return `${ROUND_LABELS[round]} · 매칭권 단계`;
   if (phase === "matching") {
     const idx = PLAYABLE_ORDER.indexOf(round);

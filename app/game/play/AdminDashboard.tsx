@@ -568,7 +568,8 @@ function StockPhaseSection({
       <h2 className="text-lg font-bold mb-1">주식 단계 — 투자 관리</h2>
       <p className="text-xs text-gray-600 mb-3">
         팀이 직접 투자할 수도 있고, admin 이 여기서 대신 입력할 수도 있습니다.
-        정산은 맨 아래 "다음 단계로" 버튼이 처리합니다 (현재 임시 10%).
+        정산은 맨 아래 "다음 단계로" 버튼이 처리합니다
+        (<code>config/yield.ts</code> 의 R(M) 공식 적용).
       </p>
 
       <div className="overflow-x-auto">
