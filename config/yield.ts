@@ -14,10 +14,17 @@
 // 값을 바꾸려면 이 파일만 수정 후 git push → Vercel 이 새 값으로 재배포.
 // 로컬은 즉시 반영됨.
 
+// 튜닝 메모:
+//   - max 가 M 에 따라 변하려면 σ_bonus 가 2·μ_max 보다 (작거나) 커야 합니다.
+//     같으면(현재 σ_bonus = 2·μ_max = 10 이었음) 평균 상승과 σ 감소가 상쇄되어
+//     max 가 M 에 관계없이 일정해집니다.
+//   - σ_bonus > 2·μ_max  → 적은 M 일수록 max(고점) 가 높아짐 (현재 설정).
+//   - σ_bonus < 2·μ_max  → 많은 M 일수록 max 가 높아짐 (보수적인 설계).
+
 export const YIELD_CONFIG = {
   u_max: 5,
   k1: 0.001,
   k2: 0.001,
   sigma_base: 10,
-  sigma_bonus: 10,
+  sigma_bonus: 15,
 } as const;
