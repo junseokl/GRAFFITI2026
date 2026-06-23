@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { YIELD_CONFIG } from "@/config/yield";
+import { TEAM_COUNT, AVG_INITIAL_SEED } from "@/config/teams";
 
 // 플레이 가능한 라운드 순서 ('ended' 는 제외)
 export const ROUND_ORDER = [
@@ -9,9 +10,9 @@ export const ROUND_ORDER = [
   "series-c",
 ] as const;
 
-// ===== 수익률 공식 =====
-// R(M) = ( μ_max − 2·μ_max / (1 + k1·M) ) + ( σ_base + σ_bonus / (1 + k2·M) ) · Z
-//   Z ~ 정규분포 (표준), [-1, 1] 로 잘림
+// ===== 수익률 공식 (비대칭 σ) =====
+// R(M, Z) = mean(M) + σ(M, Z) · Z, Z ~ N(0,1) ∩ [-1, 1]
+// σ 는 Z 의 부호에 따라 다름 (config/yield.ts 주석 참조).
 
 // 표준정규분포 샘플 (Box-Muller). |z|>1 이면 [-1, 1] 안의 값을 얻을 때까지 재시도.
 function sampleTruncatedNormal(): number {
@@ -24,12 +25,30 @@ function sampleTruncatedNormal(): number {
   return 0; // 안전망 — 사실상 도달 불가
 }
 
-// 회사별 총 투자금 M 으로부터 수익률(%) 계산
+// 회사별 총 투자금 M (원 단위) 으로부터 수익률(%) 계산
 function computeYieldPct(M: number): number {
-  const { u_max, k1, k2, sigma_base, sigma_bonus } = YIELD_CONFIG;
-  const mean = u_max - (2 * u_max) / (1 + k1 * M);
-  const sigma = sigma_base + sigma_bonus / (1 + k2 * M);
+  const {
+    u_max,
+    sigma_up_base,
+    sigma_up_bonus,
+    sigma_down_base,
+    sigma_down_growth,
+    k_scale,
+  } = YIELD_CONFIG;
+
+  // k 자동 계산: 팀 수 × 평균 시드 = 전체 게임 머니 규모
+  const totalMoney = TEAM_COUNT * AVG_INITIAL_SEED;
+  const k = k_scale / totalMoney;
+
+  const factorUp = 1 / (1 + k * M); // M=0 → 1, M=∞ → 0
+  const factorDown = (k * M) / (1 + k * M); // M=0 → 0, M=∞ → 1
+
+  const mean = u_max - 2 * u_max * factorUp;
+  const sigmaUp = sigma_up_base + sigma_up_bonus * factorUp;
+  const sigmaDown = sigma_down_base + sigma_down_growth * factorDown;
+
   const Z = sampleTruncatedNormal();
+  const sigma = Z >= 0 ? sigmaUp : sigmaDown;
   return mean + sigma * Z;
 }
 
