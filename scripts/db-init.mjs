@@ -16,10 +16,14 @@ if (!url) {
 const sql = neon(url);
 
 const statements = [
+  // 싱글톤 게임 상태 + 게임 설정 (팀 수, 평균 시드머니).
+  // 시드 단위는 won, 만원이 기본 단위 (10,000 의 배수). default = 1천만원 (10,000,000).
   `CREATE TABLE IF NOT EXISTS game_state (
      id INTEGER PRIMARY KEY DEFAULT 1,
      current_round TEXT NOT NULL DEFAULT 'seed',
      current_phase TEXT NOT NULL DEFAULT 'idle',
+     team_count INTEGER NOT NULL DEFAULT 25 CHECK (team_count >= 1),
+     avg_initial_seed INTEGER NOT NULL DEFAULT 10000000 CHECK (avg_initial_seed >= 1),
      CHECK (id = 1),
      CHECK (current_round IN ('seed','series-a','series-b','series-c','ended')),
      CHECK (current_phase IN ('idle','stock','results','matching'))
@@ -27,13 +31,17 @@ const statements = [
 
   `INSERT INTO game_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 
+  // sort_order: 사용자가 드래그로 회사 순서를 바꿀 때 사용. ID 는 SERIAL 이라 삭제 시 빈
+  // 자리가 생기지만, UI 에선 sort_order 기준으로 "순번" 1..N 을 표시함.
   `CREATE TABLE IF NOT EXISTS companies (
      id SERIAL PRIMARY KEY,
      name TEXT UNIQUE NOT NULL,
      min_order_price INTEGER NOT NULL DEFAULT 0 CHECK (min_order_price >= 0),
+     sort_order INTEGER NOT NULL DEFAULT 0,
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
 
+  // 시드는 won 단위, 10,000 의 배수만 들어옴 (앱에서 강제). DB CHECK 로는 음수만 막음.
   `CREATE TABLE IF NOT EXISTS teams (
      username TEXT PRIMARY KEY,
      seed INTEGER NOT NULL DEFAULT 0 CHECK (seed >= 0)

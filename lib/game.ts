@@ -1,6 +1,5 @@
 import { sql } from "@/lib/db";
 import { YIELD_CONFIG } from "@/config/yield";
-import { TEAM_COUNT, AVG_INITIAL_SEED } from "@/config/teams";
 
 // 플레이 가능한 라운드 순서 ('ended' 는 제외)
 export const ROUND_ORDER = [
@@ -25,8 +24,13 @@ function sampleTruncatedNormal(): number {
   return 0; // 안전망 — 사실상 도달 불가
 }
 
-// 회사별 총 투자금 M (원 단위) 으로부터 수익률(%) 계산
-function computeYieldPct(M: number): number {
+// 회사별 총 투자금 M (원 단위) 으로부터 수익률(%) 계산.
+// teamCount 와 avgInitialSeed 는 DB game_state 에서 읽은 값 (admin UI 에서 조정 가능).
+function computeYieldPct(
+  M: number,
+  teamCount: number,
+  avgInitialSeed: number,
+): number {
   const {
     u_max,
     sigma_up_base,
@@ -36,12 +40,12 @@ function computeYieldPct(M: number): number {
     k_scale,
   } = YIELD_CONFIG;
 
-  // k 자동 계산: 팀 수 × 평균 시드 = 전체 게임 머니 규모
-  const totalMoney = TEAM_COUNT * AVG_INITIAL_SEED;
+  const totalMoney = Math.max(1, teamCount * avgInitialSeed);
   const k = k_scale / totalMoney;
+  const kM = k * (Number(M) || 0);
 
-  const factorUp = 1 / (1 + k * M); // M=0 → 1, M=∞ → 0
-  const factorDown = (k * M) / (1 + k * M); // M=0 → 0, M=∞ → 1
+  const factorUp = 1 / (1 + kM); // M=0 → 1, M=∞ → 0
+  const factorDown = kM / (1 + kM); // M=0 → 0, M=∞ → 1
 
   const mean = u_max - 2 * u_max * factorUp;
   const sigmaUp = sigma_up_base + sigma_up_bonus * factorUp;
@@ -55,16 +59,26 @@ function computeYieldPct(M: number): number {
 export type GameStateRow = {
   current_round: string;
   current_phase: string;
+  team_count: number;
+  avg_initial_seed: number;
 };
 
 export async function readGameState(): Promise<GameStateRow> {
   const rows = (await sql`
-    SELECT current_round, current_phase FROM game_state WHERE id = 1
+    SELECT current_round, current_phase, team_count, avg_initial_seed
+    FROM game_state WHERE id = 1
   `) as GameStateRow[];
   if (!rows[0]) {
     throw new Error("게임 상태가 없습니다 — npm run db:init 을 실행하세요.");
   }
-  return rows[0];
+  // Neon 이 NUMERIC/INT 를 string 으로 줄 수도 있어서 방어적 변환.
+  const r = rows[0];
+  return {
+    current_round: r.current_round,
+    current_phase: r.current_phase,
+    team_count: Number(r.team_count) || 25,
+    avg_initial_seed: Number(r.avg_initial_seed) || 10_000_000,
+  };
 }
 
 // 다음 단계 계산: idle → stock → results → matching → (다음 라운드) idle ...
@@ -87,6 +101,7 @@ export function computeNextState(
 }
 
 // ===== 투자 (round 별) =====
+// 모든 금액은 won 단위. 앱 레이어에서 만원의 배수만 들어오게 강제.
 
 export async function opSetInvestment(
   round: string,
@@ -102,16 +117,16 @@ export async function opSetInvestment(
     SELECT amount FROM investments
     WHERE round = ${round} AND team_username = ${username} AND company_id = ${companyId}
   `) as { amount: number }[];
-  const prev = existing[0]?.amount ?? 0;
+  const prev = Number(existing[0]?.amount ?? 0);
   const delta = amount - prev;
 
   if (delta > 0) {
     const teamRows = (await sql`
       SELECT seed FROM teams WHERE username = ${username}
     `) as { seed: number }[];
-    const seed = teamRows[0]?.seed ?? 0;
+    const seed = Number(teamRows[0]?.seed ?? 0);
     if (seed < delta) {
-      throw new Error(`seed 가 부족합니다 (보유 ${seed}, 추가 필요 ${delta})`);
+      throw new Error(`보유 시드가 부족합니다 (보유 ${seed}, 추가 필요 ${delta})`);
     }
   }
 
@@ -135,7 +150,7 @@ export async function opClearInvestment(
     SELECT amount FROM investments
     WHERE round = ${round} AND team_username = ${username} AND company_id = ${companyId}
   `) as { amount: number }[];
-  const prev = existing[0]?.amount ?? 0;
+  const prev = Number(existing[0]?.amount ?? 0);
 
   if (prev > 0) {
     await sql`UPDATE teams SET seed = seed + ${prev} WHERE username = ${username}`;
@@ -155,25 +170,27 @@ export async function settleStockRound(round: string): Promise<void> {
   `) as unknown[];
   if (already.length > 0) return;
 
+  const { team_count, avg_initial_seed } = await readGameState();
   const companies = (await sql`SELECT id FROM companies`) as { id: number }[];
 
   for (const c of companies) {
     // 회사별 총 투자금 M 집계
     const sumRows = (await sql`
-      SELECT COALESCE(SUM(amount), 0)::INTEGER AS m
+      SELECT COALESCE(SUM(amount), 0)::BIGINT AS m
       FROM investments
       WHERE company_id = ${c.id} AND round = ${round}
-    `) as { m: number }[];
-    const M = sumRows[0]?.m ?? 0;
+    `) as { m: number | string }[];
+    const M = Number(sumRows[0]?.m ?? 0);
 
-    // 공식으로 수익률 계산 후 정수로 반올림 (round_results.yield_pct 가 INTEGER)
-    const yieldPct = Math.round(computeYieldPct(M));
+    const yieldPct = Math.round(computeYieldPct(M, team_count, avg_initial_seed));
 
+    // 페이아웃 계산: amount × (1 + y/100) 를 만원(10000)의 배수로 내림.
+    // 또한 음수가 되지 않도록 GREATEST(0, ...) 로 클램프.
     await sql`
       UPDATE teams t
       SET seed = t.seed + GREATEST(
         0,
-        FLOOR(i.amount * (1 + (${yieldPct}::numeric) / 100.0))::INTEGER
+        FLOOR(i.amount * (1 + (${yieldPct}::numeric) / 100.0) / 10000)::INTEGER * 10000
       )
       FROM investments i
       WHERE t.username = i.team_username
@@ -207,17 +224,18 @@ export async function opSetBid(
     SELECT min_order_price FROM companies WHERE id = ${companyId}
   `) as { min_order_price: number }[];
   if (!companyRows[0]) throw new Error("회사를 찾을 수 없습니다");
-  if (price < companyRows[0].min_order_price) {
-    throw new Error(
-      `최소 주문 금액(${companyRows[0].min_order_price}) 이상이어야 합니다`,
-    );
+  const minPrice = Number(companyRows[0].min_order_price);
+  if (price < minPrice) {
+    throw new Error(`최소 주문 금액 이상이어야 합니다`);
   }
 
   const existing = (await sql`
     SELECT price, count FROM bids
     WHERE team_username = ${username} AND company_id = ${companyId}
   `) as { price: number; count: number }[];
-  const prevTotal = existing[0] ? existing[0].price * existing[0].count : 0;
+  const prevTotal = existing[0]
+    ? Number(existing[0].price) * Number(existing[0].count)
+    : 0;
   const newTotal = price * count;
   const delta = newTotal - prevTotal;
 
@@ -225,9 +243,9 @@ export async function opSetBid(
     const teamRows = (await sql`
       SELECT seed FROM teams WHERE username = ${username}
     `) as { seed: number }[];
-    const seed = teamRows[0]?.seed ?? 0;
+    const seed = Number(teamRows[0]?.seed ?? 0);
     if (seed < delta) {
-      throw new Error(`seed 가 부족합니다 (보유 ${seed}, 추가 필요 ${delta})`);
+      throw new Error(`보유 시드가 부족합니다 (보유 ${seed}, 추가 필요 ${delta})`);
     }
   }
 
@@ -252,7 +270,7 @@ export async function opClearBid(
   `) as { price: number; count: number }[];
 
   if (existing[0]) {
-    const refund = existing[0].price * existing[0].count;
+    const refund = Number(existing[0].price) * Number(existing[0].count);
     await sql`UPDATE teams SET seed = seed + ${refund} WHERE username = ${username}`;
   }
   await sql`
@@ -260,7 +278,7 @@ export async function opClearBid(
   `;
 }
 
-// 매칭권 자발적 판매: 현재 최소 주문 금액 × 개수 의 80% 환불
+// 매칭권 자발적 판매: 현재 최소 주문 금액 × 개수 의 80% 환불 (만원 내림)
 export async function opSellTickets(
   username: string,
   companyId: number,
@@ -274,7 +292,7 @@ export async function opSellTickets(
     SELECT count FROM tickets
     WHERE team_username = ${username} AND company_id = ${companyId}
   `) as { count: number }[];
-  const owned = ticketRows[0]?.count ?? 0;
+  const owned = Number(ticketRows[0]?.count ?? 0);
   if (owned < count) {
     throw new Error(`보유 매칭권이 부족합니다 (보유 ${owned}, 요청 ${count})`);
   }
@@ -283,8 +301,10 @@ export async function opSellTickets(
     SELECT min_order_price FROM companies WHERE id = ${companyId}
   `) as { min_order_price: number }[];
   if (!companyRows[0]) throw new Error("회사를 찾을 수 없습니다");
+  const minPrice = Number(companyRows[0].min_order_price);
 
-  const refund = Math.floor(companyRows[0].min_order_price * count * 0.8);
+  // 80% 환불을 만원 단위 내림
+  const refund = Math.floor((minPrice * count * 0.8) / 10000) * 10000;
   await sql`UPDATE teams SET seed = seed + ${refund} WHERE username = ${username}`;
   await sql`
     UPDATE tickets SET count = count - ${count}

@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   setGameState,
+  setGameConfig,
   advanceToNextPhase,
   addCompany,
   updateCompany,
   deleteCompany,
+  reorderCompanies,
   setTeamSeed,
   deleteTeam,
   setTeamTickets,
@@ -18,6 +21,7 @@ import {
   awardBid,
   refundFailedBid,
   sellTickets,
+  type ActionResult,
 } from "@/app/actions/admin";
 import type {
   Bid,
@@ -32,8 +36,24 @@ import type {
 } from "./types";
 import { ROUND_LABELS, PHASE_LABELS, describeNext } from "./types";
 import { SettledResultsPanel, TicketHoldingsTable } from "./shared";
+import { formatManwon, manwonToWon, wonToManwon, MANWON } from "./format";
 
-type RunFn = (action: () => Promise<unknown>) => Promise<void>;
+type RunFn = (
+  action: () => Promise<ActionResult | unknown>,
+) => Promise<void>;
+
+function isError(result: unknown): string | null {
+  if (
+    result &&
+    typeof result === "object" &&
+    "error" in result &&
+    typeof (result as { error?: unknown }).error === "string" &&
+    (result as { error: string }).error
+  ) {
+    return (result as { error: string }).error;
+  }
+  return null;
+}
 
 export function AdminDashboard({ data }: { data: GameData }) {
   const router = useRouter();
@@ -47,7 +67,12 @@ export function AdminDashboard({ data }: { data: GameData }) {
   const run: RunFn = async (fn) => {
     setError(null);
     try {
-      await fn();
+      const result = await fn();
+      const err = isError(result);
+      if (err) {
+        setError(err);
+        return;
+      }
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -70,7 +95,17 @@ export function AdminDashboard({ data }: { data: GameData }) {
 
   return (
     <main className="max-w-6xl mx-auto px-5 py-8">
-      <h1 className="text-2xl font-bold mb-6">Admin 대시보드</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Admin 대시보드</h1>
+        <Link
+          href="/game/play/display"
+          target="_blank"
+          rel="noopener"
+          className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded text-sm hover:bg-indigo-200"
+        >
+          큰 화면용 디스플레이 열기 ↗
+        </Link>
+      </div>
 
       {error && (
         <div className="mb-4 px-4 py-3 bg-red-100 border border-red-300 rounded flex justify-between items-center">
@@ -86,7 +121,12 @@ export function AdminDashboard({ data }: { data: GameData }) {
       )}
 
       <GameStateSection
-        key={`${state.current_round}-${state.current_phase}`}
+        key={`gs-${state.current_round}-${state.current_phase}`}
+        state={state}
+        run={run}
+      />
+      <GameConfigSection
+        key={`gc-${state.team_count}-${state.avg_initial_seed}`}
         state={state}
         run={run}
       />
@@ -173,7 +213,7 @@ function AdvanceButton({ state, run }: { state: GameState; run: RunFn }) {
 }
 
 // ============================================================
-// 게임 상태
+// 게임 상태 (라운드/페이즈 직접 변경 - escape hatch)
 // ============================================================
 
 function GameStateSection({ state, run }: { state: GameState; run: RunFn }) {
@@ -229,7 +269,69 @@ function GameStateSection({ state, run }: { state: GameState; run: RunFn }) {
 }
 
 // ============================================================
-// 회사
+// 게임 설정 (팀 수 + 평균 시드) — 수익률 공식에 영향
+// ============================================================
+
+function GameConfigSection({ state, run }: { state: GameState; run: RunFn }) {
+  const [teamCount, setTeamCount] = useState(String(state.team_count));
+  const [avgSeedManwon, setAvgSeedManwon] = useState(
+    String(wonToManwon(state.avg_initial_seed)),
+  );
+
+  return (
+    <section className="mb-6 p-4 border border-gray-300 rounded">
+      <h2 className="text-lg font-bold mb-1">게임 설정 (수익률 공식용)</h2>
+      <p className="text-xs text-gray-600 mb-3">
+        이 두 값은 수익률 공식의 k 를 결정 (k = k_scale / (팀 수 × 평균
+        시드)). 실제 게임 환경에 맞게 조정하세요. 테스트 중이면 작게.
+      </p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="flex items-center gap-1 text-sm">
+          팀 수:
+          <input
+            type="number"
+            value={teamCount}
+            onChange={(e) => setTeamCount(e.target.value)}
+            className="border border-gray-300 px-2 py-1 rounded w-20"
+            min={1}
+          />
+        </label>
+        <label className="flex items-center gap-1 text-sm">
+          평균 시드:
+          <input
+            type="number"
+            value={avgSeedManwon}
+            onChange={(e) => setAvgSeedManwon(e.target.value)}
+            className="border border-gray-300 px-2 py-1 rounded w-28"
+            min={1}
+          />
+          <span className="text-xs text-gray-500">만원</span>
+        </label>
+        <button
+          type="button"
+          onClick={() =>
+            run(() =>
+              setGameConfig(
+                Number(teamCount),
+                manwonToWon(Number(avgSeedManwon)),
+              ),
+            )
+          }
+          className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
+        >
+          설정 저장
+        </button>
+        <span className="text-xs text-gray-500">
+          현재: {state.team_count}팀 ·{" "}
+          {formatManwon(state.avg_initial_seed)}
+        </span>
+      </div>
+    </section>
+  );
+}
+
+// ============================================================
+// 회사 (드래그로 순서 변경 가능, 만원 단위 입력)
 // ============================================================
 
 function CompaniesSection({
@@ -239,6 +341,26 @@ function CompaniesSection({
   companies: Company[];
   run: RunFn;
 }) {
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+
+  function onDrop(targetId: number) {
+    if (draggingId === null || draggingId === targetId) {
+      setDraggingId(null);
+      setDropTargetId(null);
+      return;
+    }
+    const ids = companies.map((c) => c.id);
+    const srcIdx = ids.indexOf(draggingId);
+    const tgtIdx = ids.indexOf(targetId);
+    if (srcIdx < 0 || tgtIdx < 0) return;
+    const [src] = ids.splice(srcIdx, 1);
+    ids.splice(tgtIdx, 0, src);
+    run(() => reorderCompanies(ids));
+    setDraggingId(null);
+    setDropTargetId(null);
+  }
+
   return (
     <section className="mb-6 p-4 border border-gray-300 rounded">
       <h2 className="text-lg font-bold mb-3">회사</h2>
@@ -250,19 +372,37 @@ function CompaniesSection({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left">
-                <th className="py-1 w-16">ID</th>
+                <th className="py-1 w-12"></th>
+                <th className="py-1 w-16">순번</th>
                 <th className="py-1">이름</th>
-                <th className="py-1 w-40">최소 주문 금액</th>
+                <th className="py-1 w-44">최소 주문 금액 (만원)</th>
                 <th className="py-1 w-40">작업</th>
               </tr>
             </thead>
             <tbody>
-              {companies.map((c) => (
-                <CompanyRow key={c.id} company={c} run={run} />
+              {companies.map((c, idx) => (
+                <CompanyRow
+                  key={c.id}
+                  company={c}
+                  positionLabel={idx + 1}
+                  run={run}
+                  isDragging={draggingId === c.id}
+                  isDropTarget={dropTargetId === c.id && draggingId !== c.id}
+                  onDragStart={() => setDraggingId(c.id)}
+                  onDragEnter={() => setDropTargetId(c.id)}
+                  onDragEnd={() => {
+                    setDraggingId(null);
+                    setDropTargetId(null);
+                  }}
+                  onDrop={() => onDrop(c.id)}
+                />
               ))}
             </tbody>
           </table>
         )}
+        <p className="text-xs text-gray-500 mt-2">
+          ⋮⋮ 핸들을 잡고 행을 위/아래로 드래그하면 순서가 바뀝니다.
+        </p>
       </div>
     </section>
   );
@@ -270,7 +410,7 @@ function CompaniesSection({
 
 function AddCompanyForm({ run }: { run: RunFn }) {
   const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
+  const [priceManwon, setPriceManwon] = useState("");
 
   return (
     <div className="flex gap-2 flex-wrap">
@@ -281,19 +421,22 @@ function AddCompanyForm({ run }: { run: RunFn }) {
         onChange={(e) => setName(e.target.value)}
         className="border border-gray-300 px-2 py-1 rounded flex-1 min-w-40"
       />
-      <input
-        type="number"
-        placeholder="최소 주문 금액"
-        value={price}
-        onChange={(e) => setPrice(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-40"
-      />
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          placeholder="최소 주문 금액"
+          value={priceManwon}
+          onChange={(e) => setPriceManwon(e.target.value)}
+          className="border border-gray-300 px-2 py-1 rounded w-40"
+        />
+        <span className="text-xs text-gray-500">만원</span>
+      </div>
       <button
         type="button"
         onClick={async () => {
-          await run(() => addCompany(name, Number(price)));
+          await run(() => addCompany(name, manwonToWon(Number(priceManwon))));
           setName("");
-          setPrice("");
+          setPriceManwon("");
         }}
         className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
       >
@@ -303,13 +446,63 @@ function AddCompanyForm({ run }: { run: RunFn }) {
   );
 }
 
-function CompanyRow({ company, run }: { company: Company; run: RunFn }) {
+function CompanyRow({
+  company,
+  positionLabel,
+  run,
+  isDragging,
+  isDropTarget,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onDrop,
+}: {
+  company: Company;
+  positionLabel: number;
+  run: RunFn;
+  isDragging: boolean;
+  isDropTarget: boolean;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
+}) {
   const [name, setName] = useState(company.name);
-  const [price, setPrice] = useState(String(company.min_order_price));
+  const [priceManwon, setPriceManwon] = useState(
+    String(wonToManwon(company.min_order_price)),
+  );
 
   return (
-    <tr className="border-b border-gray-100">
-      <td className="py-1">{company.id}</td>
+    <tr
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDragEnter={onDragEnter}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      className={
+        "border-b border-gray-100 " +
+        (isDragging ? "opacity-40 " : "") +
+        (isDropTarget ? "bg-blue-50 " : "")
+      }
+    >
+      <td
+        className="py-1 cursor-move select-none text-gray-400 text-center"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", String(company.id));
+          e.dataTransfer.effectAllowed = "move";
+          onDragStart();
+        }}
+        onDragEnd={onDragEnd}
+        title="드래그로 순서 변경"
+      >
+        ⋮⋮
+      </td>
+      <td className="py-1">{positionLabel}</td>
       <td className="py-1">
         <input
           value={name}
@@ -318,19 +511,28 @@ function CompanyRow({ company, run }: { company: Company; run: RunFn }) {
         />
       </td>
       <td className="py-1">
-        <input
-          type="number"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          className="border border-gray-300 px-2 py-1 rounded w-32"
-        />
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            value={priceManwon}
+            onChange={(e) => setPriceManwon(e.target.value)}
+            className="border border-gray-300 px-2 py-1 rounded w-32"
+          />
+          <span className="text-xs text-gray-500">만원</span>
+        </div>
       </td>
       <td className="py-1">
         <div className="flex gap-1">
           <button
             type="button"
             onClick={() =>
-              run(() => updateCompany(company.id, name, Number(price)))
+              run(() =>
+                updateCompany(
+                  company.id,
+                  name,
+                  manwonToWon(Number(priceManwon)),
+                ),
+              )
             }
             className="px-2 py-1 bg-gray-200 rounded text-xs"
           >
@@ -386,10 +588,10 @@ function TeamsSection({
             <thead>
               <tr className="border-b border-gray-200 text-left">
                 <th className="py-1">팀</th>
-                <th className="py-1 w-44">seed</th>
+                <th className="py-1 w-52">seed (만원)</th>
                 {companies.map((c) => (
-                  <th key={c.id} className="py-1 w-32">
-                    {c.name} 매칭권
+                  <th key={c.id} className="py-1 w-36">
+                    {c.name} 매칭권 (개)
                   </th>
                 ))}
                 <th className="py-1 w-20">작업</th>
@@ -421,7 +623,7 @@ function AddTeamForm({
   run: RunFn;
 }) {
   const [username, setUsername] = useState("");
-  const [seed, setSeed] = useState("");
+  const [seedManwon, setSeedManwon] = useState("");
 
   return (
     <div className="flex gap-2 flex-wrap items-center">
@@ -438,19 +640,24 @@ function AddTeamForm({
           <option key={u} value={u} />
         ))}
       </datalist>
-      <input
-        type="number"
-        placeholder="초기 seed"
-        value={seed}
-        onChange={(e) => setSeed(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-40"
-      />
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          placeholder="초기 seed"
+          value={seedManwon}
+          onChange={(e) => setSeedManwon(e.target.value)}
+          className="border border-gray-300 px-2 py-1 rounded w-32"
+        />
+        <span className="text-xs text-gray-500">만원</span>
+      </div>
       <button
         type="button"
         onClick={async () => {
-          await run(() => setTeamSeed(username, Number(seed)));
+          await run(() =>
+            setTeamSeed(username, manwonToWon(Number(seedManwon))),
+          );
           setUsername("");
-          setSeed("");
+          setSeedManwon("");
         }}
         className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
       >
@@ -480,10 +687,10 @@ function TeamRow({
     <tr className="border-b border-gray-100">
       <td className="py-1 font-mono">{team.username}</td>
       <td className="py-1">
-        <NumberEditor
+        <ManwonEditor
           key={`seed-${team.seed}`}
-          initial={team.seed}
-          onSave={(v) => run(() => setTeamSeed(team.username, v))}
+          initialWon={team.seed}
+          onSaveWon={(w) => run(() => setTeamSeed(team.username, w))}
         />
       </td>
       {companies.map((c) => {
@@ -492,7 +699,7 @@ function TeamRow({
         );
         return (
           <td key={c.id} className="py-1">
-            <NumberEditor
+            <IntEditor
               key={`tk-${team.username}-${c.id}-${ticket?.count ?? 0}`}
               initial={ticket?.count ?? 0}
               onSave={(v) => run(() => setTeamTickets(team.username, c.id, v))}
@@ -517,7 +724,35 @@ function TeamRow({
   );
 }
 
-function NumberEditor({
+function ManwonEditor({
+  initialWon,
+  onSaveWon,
+}: {
+  initialWon: number;
+  onSaveWon: (won: number) => void;
+}) {
+  const [v, setV] = useState(String(wonToManwon(initialWon)));
+  return (
+    <div className="flex gap-1 items-center">
+      <input
+        type="number"
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        className="border border-gray-300 px-2 py-1 rounded w-24"
+      />
+      <span className="text-xs text-gray-500">만원</span>
+      <button
+        type="button"
+        onClick={() => onSaveWon(manwonToWon(Number(v)))}
+        className="px-2 py-1 bg-gray-200 rounded text-xs"
+      >
+        저장
+      </button>
+    </div>
+  );
+}
+
+function IntEditor({
   initial,
   onSave,
 }: {
@@ -531,7 +766,7 @@ function NumberEditor({
         type="number"
         value={v}
         onChange={(e) => setV(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-24"
+        className="border border-gray-300 px-2 py-1 rounded w-20"
       />
       <button
         type="button"
@@ -568,8 +803,8 @@ function StockPhaseSection({
       <h2 className="text-lg font-bold mb-1">주식 단계 — 투자 관리</h2>
       <p className="text-xs text-gray-600 mb-3">
         팀이 직접 투자할 수도 있고, admin 이 여기서 대신 입력할 수도 있습니다.
-        정산은 맨 아래 "다음 단계로" 버튼이 처리합니다
-        (<code>config/yield.ts</code> 의 R(M) 공식 적용).
+        모든 금액은 <strong>만원</strong> 단위. 정산은 맨 아래 "다음 단계로"
+        버튼이 처리합니다 (config/yield.ts 공식 + 게임 설정의 팀수/평균시드).
       </p>
 
       <div className="overflow-x-auto">
@@ -579,7 +814,7 @@ function StockPhaseSection({
           <table className="w-full text-sm bg-white">
             <thead>
               <tr className="border-b border-gray-200 text-left">
-                <th className="py-1 px-2">팀 \ 회사</th>
+                <th className="py-1 px-2">팀 \ 회사 (만원)</th>
                 {companies.map((c) => (
                   <th key={c.id} className="py-1 px-2">
                     {c.name}
@@ -593,7 +828,7 @@ function StockPhaseSection({
                 const teamInvestments = roundInvestments.filter(
                   (i) => i.team_username === t.username,
                 );
-                const total = teamInvestments.reduce(
+                const totalWon = teamInvestments.reduce(
                   (s, i) => s + i.amount,
                   0,
                 );
@@ -602,7 +837,7 @@ function StockPhaseSection({
                     <td className="py-1 px-2">
                       <div className="font-mono">{t.username}</div>
                       <div className="text-xs text-gray-500">
-                        seed {t.seed.toLocaleString()}원
+                        seed {formatManwon(t.seed)}
                       </div>
                     </td>
                     {companies.map((c) => {
@@ -622,7 +857,7 @@ function StockPhaseSection({
                       );
                     })}
                     <td className="py-1 px-2 text-right font-semibold">
-                      {total.toLocaleString()}
+                      {formatManwon(totalWon)}
                     </td>
                   </tr>
                 );
@@ -646,7 +881,7 @@ function InvestmentCell({
   currentAmount: number;
   run: RunFn;
 }) {
-  const [v, setV] = useState(String(currentAmount));
+  const [v, setV] = useState(String(wonToManwon(currentAmount)));
   return (
     <div className="flex gap-1 items-center">
       <input
@@ -657,7 +892,11 @@ function InvestmentCell({
       />
       <button
         type="button"
-        onClick={() => run(() => setInvestment(username, companyId, Number(v)))}
+        onClick={() =>
+          run(() =>
+            setInvestment(username, companyId, manwonToWon(Number(v))),
+          )
+        }
         className="px-1 py-1 bg-gray-200 rounded text-xs"
       >
         저장
@@ -703,12 +942,12 @@ function MatchingPhaseSection({
           <table className="w-full text-sm bg-white">
             <thead>
               <tr className="border-b border-gray-200 text-left">
-                <th className="py-1 px-2">팀 \ 회사</th>
+                <th className="py-1 px-2">팀 \ 회사 (가격: 만원)</th>
                 {companies.map((c) => (
                   <th key={c.id} className="py-1 px-2">
                     {c.name}
                     <div className="text-xs text-gray-500 font-normal">
-                      최소 {c.min_order_price.toLocaleString()}원
+                      최소 {formatManwon(c.min_order_price)}
                     </div>
                   </th>
                 ))}
@@ -720,7 +959,7 @@ function MatchingPhaseSection({
                   <td className="py-1 px-2">
                     <div className="font-mono">{t.username}</div>
                     <div className="text-xs text-gray-500">
-                      seed {t.seed.toLocaleString()}원
+                      seed {formatManwon(t.seed)}
                     </div>
                   </td>
                   {companies.map((c) => {
@@ -771,8 +1010,8 @@ function BidCell({
   currentBid: Bid | null;
   run: RunFn;
 }) {
-  const [price, setPrice] = useState(
-    currentBid ? String(currentBid.price) : "",
+  const [priceManwon, setPriceManwon] = useState(
+    currentBid ? String(wonToManwon(currentBid.price)) : "",
   );
   const [count, setCount] = useState(
     currentBid ? String(currentBid.count) : "",
@@ -782,9 +1021,9 @@ function BidCell({
     <div className="flex flex-col gap-1">
       <input
         type="number"
-        placeholder="가격"
-        value={price}
-        onChange={(e) => setPrice(e.target.value)}
+        placeholder="가격(만원)"
+        value={priceManwon}
+        onChange={(e) => setPriceManwon(e.target.value)}
         className="border border-gray-300 px-2 py-1 rounded w-24 text-xs"
       />
       <input
@@ -798,7 +1037,14 @@ function BidCell({
         <button
           type="button"
           onClick={() =>
-            run(() => setBid(username, companyId, Number(price), Number(count)))
+            run(() =>
+              setBid(
+                username,
+                companyId,
+                manwonToWon(Number(priceManwon)),
+                Number(count),
+              ),
+            )
           }
           className="px-1 py-1 bg-gray-200 rounded text-xs flex-1"
         >
@@ -870,11 +1116,11 @@ function BidResolutionList({
                     <td className="py-1">{idx + 1}</td>
                     <td className="py-1 font-mono">{b.team_username}</td>
                     <td className="py-1 text-right">
-                      {b.price.toLocaleString()}
+                      {formatManwon(b.price)}
                     </td>
                     <td className="py-1 text-right">{b.count}</td>
                     <td className="py-1 text-right">
-                      {(b.price * b.count).toLocaleString()}
+                      {formatManwon(b.price * b.count)}
                     </td>
                     <td className="py-1">
                       <div className="flex gap-1">
@@ -938,6 +1184,16 @@ function TicketSellForm({
         )?.count ?? 0
       : null;
 
+  const company = companyId
+    ? companies.find((c) => c.id === Number(companyId))
+    : null;
+  const refundPreview =
+    company && Number(count) > 0
+      ? Math.floor(
+          (company.min_order_price * Number(count) * 0.8) / MANWON,
+        ) * MANWON
+      : null;
+
   return (
     <div className="mt-4 p-3 bg-white border border-gray-300 rounded">
       <h3 className="font-bold mb-2">
@@ -977,6 +1233,11 @@ function TicketSellForm({
         />
         {ownedCount !== null && (
           <span className="text-xs text-gray-600">보유: {ownedCount}</span>
+        )}
+        {refundPreview !== null && (
+          <span className="text-xs text-gray-600">
+            예상 환불: {formatManwon(refundPreview)}
+          </span>
         )}
         <button
           type="button"

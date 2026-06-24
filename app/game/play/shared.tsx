@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Company, Investment, RoundResult, Team, Ticket } from "./types";
 import { ROUND_LABELS, latestSettledRound } from "./types";
+import { formatManwon } from "./format";
 
 export const SLICE_COLORS = [
   "#3b82f6",
@@ -122,7 +123,7 @@ function PieTooltip({
 }) {
   return (
     <div className="absolute top-1 left-1 bg-gray-900 text-white text-xs px-2 py-1 rounded pointer-events-none whitespace-nowrap z-10">
-      {label} · {pct.toFixed(1)}% · {value.toLocaleString()}원
+      {label} · {pct.toFixed(1)}% · {formatManwon(value)}
     </div>
   );
 }
@@ -197,7 +198,7 @@ export function SettledResultsPanel({
                 <div className="font-semibold">{c.name}</div>
                 <div className="text-xs text-gray-600 mb-1">
                   수익률 {yieldByCompany.get(c.id) ?? 0}% · 총 투자{" "}
-                  {total.toLocaleString()}원
+                  {formatManwon(total)}
                 </div>
                 <PieChart slices={slices} />
                 <div className="mt-1 space-y-0.5">
@@ -212,7 +213,7 @@ export function SettledResultsPanel({
                           background: SLICE_COLORS[i % SLICE_COLORS.length],
                         }}
                       />
-                      {s.label}: {s.value.toLocaleString()}원
+                      {s.label}: {formatManwon(s.value)}
                     </div>
                   ))}
                 </div>
@@ -244,7 +245,7 @@ export function TicketHoldingsTable({
 
   return (
     <section className="mb-6 p-4 border border-gray-300 rounded">
-      <h2 className="text-lg font-bold mb-3">매칭권 보유 현황</h2>
+      <h2 className="text-lg font-bold mb-3">매칭권 보유 현황 (개)</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -271,6 +272,48 @@ export function TicketHoldingsTable({
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// ===== 전체 팀 시드 요약 (display 페이지용) =====
+
+export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
+  if (teams.length === 0) {
+    return (
+      <section className="mb-6 p-4 border border-gray-300 rounded">
+        <h2 className="text-lg font-bold mb-3">전체 팀 시드</h2>
+        <p className="text-sm text-gray-500">등록된 팀이 없습니다.</p>
+      </section>
+    );
+  }
+  const total = teams.reduce((s, t) => s + t.seed, 0);
+  const sorted = [...teams].sort((a, b) => b.seed - a.seed);
+
+  return (
+    <section className="mb-6 p-4 border border-gray-300 rounded">
+      <h2 className="text-lg font-bold mb-1">전체 팀 시드</h2>
+      <p className="text-sm text-gray-600 mb-3">
+        합계: <strong>{formatManwon(total)}</strong>
+      </p>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-200 text-left">
+            <th className="py-1 px-2">순위</th>
+            <th className="py-1 px-2">팀</th>
+            <th className="py-1 px-2 text-right">seed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((t, idx) => (
+            <tr key={t.username} className="border-b border-gray-100">
+              <td className="py-1 px-2">{idx + 1}</td>
+              <td className="py-1 px-2 font-mono">{t.username}</td>
+              <td className="py-1 px-2 text-right">{formatManwon(t.seed)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }

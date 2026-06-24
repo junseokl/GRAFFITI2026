@@ -10,12 +10,15 @@ export type Phase = "idle" | "stock" | "results" | "matching";
 export type GameState = {
   current_round: Round;
   current_phase: Phase;
+  team_count: number;
+  avg_initial_seed: number;
 };
 
 export type Company = {
   id: number;
   name: string;
   min_order_price: number;
+  sort_order: number;
 };
 
 export type Team = {

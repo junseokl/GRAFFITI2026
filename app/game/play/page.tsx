@@ -1,20 +1,9 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { isAdminUsername } from "@/lib/permissions";
-import { sql } from "@/lib/db";
-import { getAllUsernames } from "@/lib/users";
 import { AdminDashboard } from "./AdminDashboard";
 import { PlayerView } from "./PlayerView";
-import type {
-  Bid,
-  Company,
-  GameData,
-  GameState,
-  Investment,
-  RoundResult,
-  Team,
-  Ticket,
-} from "./types";
+import { fetchGameData } from "./data";
 
 export const dynamic = "force-dynamic";
 
@@ -67,46 +56,4 @@ export default async function GamePlayPage() {
       </main>
     );
   }
-}
-
-async function fetchGameData(
-  isAdmin: boolean,
-  username: string,
-): Promise<GameData> {
-  const [
-    stateRows,
-    companyRows,
-    teamRows,
-    ticketRows,
-    investmentRows,
-    roundResultRows,
-  ] = await Promise.all([
-    sql`SELECT current_round, current_phase FROM game_state WHERE id = 1`,
-    sql`SELECT id, name, min_order_price FROM companies ORDER BY id`,
-    sql`SELECT username, seed FROM teams ORDER BY username`,
-    sql`SELECT team_username, company_id, count FROM tickets`,
-    sql`SELECT round, team_username, company_id, amount FROM investments`,
-    sql`SELECT round, company_id, yield_pct FROM round_results`,
-  ]);
-
-  // admin 은 모든 입찰을, 플레이어는 자기 팀 입찰만 받음
-  // (다른 팀 입찰가는 플레이어 화면에 노출하지 않음)
-  const bidRows = isAdmin
-    ? await sql`SELECT team_username, company_id, price, count FROM bids`
-    : await sql`SELECT team_username, company_id, price, count FROM bids WHERE team_username = ${username}`;
-
-  const configuredUsernames = getAllUsernames().filter(
-    (u) => !isAdminUsername(u),
-  );
-
-  return {
-    state: stateRows[0] as GameState | undefined,
-    companies: companyRows as Company[],
-    teams: teamRows as Team[],
-    tickets: ticketRows as Ticket[],
-    investments: investmentRows as Investment[],
-    roundResults: roundResultRows as RoundResult[],
-    bids: bidRows as Bid[],
-    configuredUsernames,
-  };
 }

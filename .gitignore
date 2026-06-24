@@ -1,6 +1,9 @@
 # local tooling
 /.claude
 
+# 계정 비번 메모 (평문, 커밋 금지)
+/accounts.md
+
 # dependencies
 /node_modules
 /.pnp
