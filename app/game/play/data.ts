@@ -25,7 +25,7 @@ export async function fetchGameData(
     investmentRows,
     roundResultRows,
   ] = await Promise.all([
-    sql`SELECT current_round, current_phase, team_count, avg_initial_seed FROM game_state WHERE id = 1`,
+    sql`SELECT current_round, current_phase, team_count, avg_initial_seed, matching_top_n FROM game_state WHERE id = 1`,
     sql`SELECT id, name, min_order_price, sort_order FROM companies ORDER BY sort_order, id`,
     sql`SELECT username, seed FROM teams ORDER BY username`,
     sql`SELECT team_username, company_id, count FROM tickets`,
@@ -44,9 +44,10 @@ export async function fetchGameData(
 
   // Neon 이 INTEGER/NUMERIC 을 string 으로 줄 수 있는 케이스 방어
   const state = stateRows[0] as
-    | (Omit<GameState, "team_count" | "avg_initial_seed"> & {
+    | (Omit<GameState, "team_count" | "avg_initial_seed" | "matching_top_n"> & {
         team_count: number | string;
         avg_initial_seed: number | string;
+        matching_top_n: number | string | null;
       })
     | undefined;
 
@@ -57,6 +58,7 @@ export async function fetchGameData(
           current_phase: state.current_phase,
           team_count: Number(state.team_count) || 25,
           avg_initial_seed: Number(state.avg_initial_seed) || 10_000_000,
+          matching_top_n: Number(state.matching_top_n ?? 2),
         }
       : undefined,
     companies: (companyRows as Company[]).map((c) => ({

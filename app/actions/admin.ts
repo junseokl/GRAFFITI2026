@@ -12,6 +12,9 @@ import {
   opSetBid,
   opClearBid,
   opSellTickets,
+  opAwardBid,
+  opRefundFailedBid,
+  autoResolveMatchingPhase,
 } from "@/lib/game";
 
 const ROUNDS = ["seed", "series-a", "series-b", "series-c", "ended"] as const;
@@ -82,12 +85,17 @@ export async function setGameState(
 }
 
 // "다음 단계로 넘어가기": idle→stock→results→matching→(다음 라운드)
-// stock → results 로 넘어갈 때 자동 정산.
+// stock → results: 자동 수익률 정산
+// matching → next: 자동 매칭권 정산 (상위 topN 확정, 나머지 50% 환불)
 export async function advanceToNextPhase(): Promise<ActionResult> {
   return guard(async () => {
-    const { current_round, current_phase } = await readGameState();
+    const { current_round, current_phase, matching_top_n } =
+      await readGameState();
     if (current_phase === "stock") {
       await settleStockRound(current_round);
+    }
+    if (current_phase === "matching") {
+      await autoResolveMatchingPhase(matching_top_n);
     }
     const next = computeNextState(current_round, current_phase);
     await sql`
@@ -99,18 +107,22 @@ export async function advanceToNextPhase(): Promise<ActionResult> {
   });
 }
 
-// ===== 게임 설정 (팀 수, 평균 시드머니) — 수익률 공식에 사용됨 =====
+// ===== 게임 설정 (팀 수, 평균 시드머니, 매칭권 상위 N) =====
+// team_count / avg_initial_seed: 수익률 공식 k 산정에 사용
+// matching_top_n: 매칭권 단계 종료 시 자동 정산에서 회사별 상위 N 팀만 확정
 
 export async function setGameConfig(
   teamCount: number,
   avgInitialSeed: number,
+  matchingTopN: number,
 ): Promise<ActionResult> {
   return guard(async () => {
     const tc = assertInt(teamCount, "teamCount", { min: 1 });
     const ai = assertInt(avgInitialSeed, "avgInitialSeed", { min: 10000 });
+    const tn = assertInt(matchingTopN, "matchingTopN", { min: 0 });
     await sql`
       UPDATE game_state
-      SET team_count = ${tc}, avg_initial_seed = ${ai}
+      SET team_count = ${tc}, avg_initial_seed = ${ai}, matching_top_n = ${tn}
       WHERE id = 1
     `;
     refresh();
@@ -287,7 +299,7 @@ export async function clearBid(
   });
 }
 
-// 입찰 승자 처리: 입찰 count 만큼 tickets 추가, 환불 없음 (이미 차감됨)
+// 입찰 승자 처리 (수동 — admin 대시보드에서 개별 확정 시 사용)
 export async function awardBid(
   username: string,
   companyId: number,
@@ -295,24 +307,12 @@ export async function awardBid(
   return guard(async () => {
     const u = assertString(username, "username");
     const c = assertInt(companyId, "companyId");
-
-    const bidRows = (await sql`
-      SELECT count FROM bids WHERE team_username = ${u} AND company_id = ${c}
-    `) as { count: number }[];
-    if (!bidRows[0]) throw new Error("해당 입찰을 찾을 수 없습니다");
-    const cnt = Number(bidRows[0].count);
-
-    await sql`INSERT INTO teams (username, seed) VALUES (${u}, 0) ON CONFLICT (username) DO NOTHING`;
-    await sql`
-      INSERT INTO tickets (team_username, company_id, count) VALUES (${u}, ${c}, ${cnt})
-      ON CONFLICT (team_username, company_id) DO UPDATE SET count = tickets.count + EXCLUDED.count
-    `;
-    await sql`DELETE FROM bids WHERE team_username = ${u} AND company_id = ${c}`;
+    await opAwardBid(u, c);
     refresh();
   });
 }
 
-// 패자 처리: 입찰 가격 * 개수 의 50% 환불 (만원 내림), 입찰 삭제
+// 패자 처리 (수동 — admin 대시보드에서 개별 50% 환불 시 사용)
 export async function refundFailedBid(
   username: string,
   companyId: number,
@@ -320,16 +320,7 @@ export async function refundFailedBid(
   return guard(async () => {
     const u = assertString(username, "username");
     const c = assertInt(companyId, "companyId");
-
-    const bidRows = (await sql`
-      SELECT price, count FROM bids WHERE team_username = ${u} AND company_id = ${c}
-    `) as { price: number; count: number }[];
-    if (!bidRows[0]) throw new Error("해당 입찰을 찾을 수 없습니다");
-
-    const total = Number(bidRows[0].price) * Number(bidRows[0].count);
-    const refundAmt = Math.floor((total * 0.5) / 10000) * 10000;
-    await sql`UPDATE teams SET seed = seed + ${refundAmt} WHERE username = ${u}`;
-    await sql`DELETE FROM bids WHERE team_username = ${u} AND company_id = ${c}`;
+    await opRefundFailedBid(u, c);
     refresh();
   });
 }

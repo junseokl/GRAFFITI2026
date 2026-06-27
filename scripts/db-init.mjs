@@ -24,10 +24,14 @@ const statements = [
      current_phase TEXT NOT NULL DEFAULT 'idle',
      team_count INTEGER NOT NULL DEFAULT 25 CHECK (team_count >= 1),
      avg_initial_seed INTEGER NOT NULL DEFAULT 10000000 CHECK (avg_initial_seed >= 1),
+     matching_top_n INTEGER NOT NULL DEFAULT 2 CHECK (matching_top_n >= 0),
      CHECK (id = 1),
      CHECK (current_round IN ('seed','series-a','series-b','series-c','ended')),
      CHECK (current_phase IN ('idle','stock','results','matching'))
    )`,
+
+  // 기존 DB 에 컬럼 추가 (없으면 무시). db:reset 안 해도 새 기능 동작하도록.
+  `ALTER TABLE game_state ADD COLUMN IF NOT EXISTS matching_top_n INTEGER NOT NULL DEFAULT 2`,
 
   `INSERT INTO game_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 

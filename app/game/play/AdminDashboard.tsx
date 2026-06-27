@@ -126,7 +126,7 @@ export function AdminDashboard({ data }: { data: GameData }) {
         run={run}
       />
       <GameConfigSection
-        key={`gc-${state.team_count}-${state.avg_initial_seed}`}
+        key={`gc-${state.team_count}-${state.avg_initial_seed}-${state.matching_top_n}`}
         state={state}
         run={run}
       />
@@ -182,11 +182,20 @@ export function AdminDashboard({ data }: { data: GameData }) {
 
 function AdvanceButton({ state, run }: { state: GameState; run: RunFn }) {
   const ended = state.current_round === "ended";
+  const matchingNote =
+    state.current_phase === "matching"
+      ? `\n(매칭권 자동 정산: 회사별 가격 상위 ${state.matching_top_n}팀 확정, 나머지 50% 환불)`
+      : "";
   return (
     <div className="mt-8 flex justify-end items-center gap-3">
       {!ended && (
         <span className="text-sm text-gray-600">
           다음: {describeNext(state.current_round, state.current_phase)}
+          {state.current_phase === "matching" && (
+            <span className="ml-2 text-amber-700">
+              + 상위 {state.matching_top_n}팀 자동 확정
+            </span>
+          )}
         </span>
       )}
       <button
@@ -198,7 +207,7 @@ function AdvanceButton({ state, run }: { state: GameState; run: RunFn }) {
               `다음 단계로 넘어갈까요?\n→ ${describeNext(
                 state.current_round,
                 state.current_phase,
-              )}`,
+              )}${matchingNote}`,
             )
           ) {
             run(() => advanceToNextPhase());
@@ -277,13 +286,15 @@ function GameConfigSection({ state, run }: { state: GameState; run: RunFn }) {
   const [avgSeedManwon, setAvgSeedManwon] = useState(
     String(wonToManwon(state.avg_initial_seed)),
   );
+  const [topN, setTopN] = useState(String(state.matching_top_n));
 
   return (
     <section className="mb-6 p-4 border border-gray-300 rounded">
-      <h2 className="text-lg font-bold mb-1">게임 설정 (수익률 공식용)</h2>
+      <h2 className="text-lg font-bold mb-1">게임 설정</h2>
       <p className="text-xs text-gray-600 mb-3">
-        이 두 값은 수익률 공식의 k 를 결정 (k = k_scale / (팀 수 × 평균
-        시드)). 실제 게임 환경에 맞게 조정하세요. 테스트 중이면 작게.
+        팀 수·평균 시드는 수익률 공식의 k 산정에 사용 (k = k_scale / (팀 수 ×
+        평균 시드)). 매칭권 상위 N 은 매칭권 단계 종료 시 자동 정산에서 회사별
+        상위 N 팀만 확정하고 나머지는 50% 환불.
       </p>
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-1 text-sm">
@@ -307,6 +318,17 @@ function GameConfigSection({ state, run }: { state: GameState; run: RunFn }) {
           />
           <span className="text-xs text-gray-500">만원</span>
         </label>
+        <label className="flex items-center gap-1 text-sm">
+          매칭권 상위:
+          <input
+            type="number"
+            value={topN}
+            onChange={(e) => setTopN(e.target.value)}
+            className="border border-gray-300 px-2 py-1 rounded w-20"
+            min={0}
+          />
+          <span className="text-xs text-gray-500">팀</span>
+        </label>
         <button
           type="button"
           onClick={() =>
@@ -314,6 +336,7 @@ function GameConfigSection({ state, run }: { state: GameState; run: RunFn }) {
               setGameConfig(
                 Number(teamCount),
                 manwonToWon(Number(avgSeedManwon)),
+                Number(topN),
               ),
             )
           }
@@ -322,8 +345,8 @@ function GameConfigSection({ state, run }: { state: GameState; run: RunFn }) {
           설정 저장
         </button>
         <span className="text-xs text-gray-500">
-          현재: {state.team_count}팀 ·{" "}
-          {formatManwon(state.avg_initial_seed)}
+          현재: {state.team_count}팀 · {formatManwon(state.avg_initial_seed)} ·
+          상위 {state.matching_top_n}팀 자동 확정
         </span>
       </div>
     </section>

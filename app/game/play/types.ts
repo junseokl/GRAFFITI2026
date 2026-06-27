@@ -12,6 +12,7 @@ export type GameState = {
   current_phase: Phase;
   team_count: number;
   avg_initial_seed: number;
+  matching_top_n: number;
 };
 
 export type Company = {

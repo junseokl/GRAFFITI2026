@@ -61,11 +61,12 @@ export type GameStateRow = {
   current_phase: string;
   team_count: number;
   avg_initial_seed: number;
+  matching_top_n: number;
 };
 
 export async function readGameState(): Promise<GameStateRow> {
   const rows = (await sql`
-    SELECT current_round, current_phase, team_count, avg_initial_seed
+    SELECT current_round, current_phase, team_count, avg_initial_seed, matching_top_n
     FROM game_state WHERE id = 1
   `) as GameStateRow[];
   if (!rows[0]) {
@@ -78,6 +79,7 @@ export async function readGameState(): Promise<GameStateRow> {
     current_phase: r.current_phase,
     team_count: Number(r.team_count) || 25,
     avg_initial_seed: Number(r.avg_initial_seed) || 10_000_000,
+    matching_top_n: Number(r.matching_top_n ?? 2),
   };
 }
 
@@ -276,6 +278,70 @@ export async function opClearBid(
   await sql`
     DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}
   `;
+}
+
+// 입찰 승자 처리: 입찰 count 만큼 tickets 추가, 환불 없음 (이미 차감됨).
+export async function opAwardBid(
+  username: string,
+  companyId: number,
+): Promise<void> {
+  const bidRows = (await sql`
+    SELECT count FROM bids
+    WHERE team_username = ${username} AND company_id = ${companyId}
+  `) as { count: number }[];
+  if (!bidRows[0]) throw new Error("해당 입찰을 찾을 수 없습니다");
+  const cnt = Number(bidRows[0].count);
+
+  await sql`INSERT INTO teams (username, seed) VALUES (${username}, 0) ON CONFLICT (username) DO NOTHING`;
+  await sql`
+    INSERT INTO tickets (team_username, company_id, count)
+    VALUES (${username}, ${companyId}, ${cnt})
+    ON CONFLICT (team_username, company_id)
+    DO UPDATE SET count = tickets.count + EXCLUDED.count
+  `;
+  await sql`DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}`;
+}
+
+// 패자 처리: 가격×개수 의 50% 환불 (만원 내림), 입찰 삭제.
+export async function opRefundFailedBid(
+  username: string,
+  companyId: number,
+): Promise<void> {
+  const bidRows = (await sql`
+    SELECT price, count FROM bids
+    WHERE team_username = ${username} AND company_id = ${companyId}
+  `) as { price: number; count: number }[];
+  if (!bidRows[0]) throw new Error("해당 입찰을 찾을 수 없습니다");
+
+  const total = Number(bidRows[0].price) * Number(bidRows[0].count);
+  const refundAmt = Math.floor((total * 0.5) / 10000) * 10000;
+  await sql`UPDATE teams SET seed = seed + ${refundAmt} WHERE username = ${username}`;
+  await sql`DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}`;
+}
+
+// 매칭권 단계 자동 정산: 회사별로 가격 내림차순 정렬 → 상위 topN 팀 확정,
+// 나머지 50% 환불. 동률은 team_username 오름차순으로 안정 정렬.
+export async function autoResolveMatchingPhase(topN: number): Promise<void> {
+  if (!Number.isInteger(topN) || topN < 0) {
+    throw new Error("매칭권 상위 N 값은 0 이상의 정수여야 합니다");
+  }
+  const companies = (await sql`SELECT id FROM companies`) as { id: number }[];
+  for (const c of companies) {
+    const bids = (await sql`
+      SELECT team_username, price, count FROM bids
+      WHERE company_id = ${c.id}
+      ORDER BY price DESC, team_username ASC
+    `) as { team_username: string; price: number; count: number }[];
+
+    for (let i = 0; i < bids.length; i++) {
+      const b = bids[i];
+      if (i < topN) {
+        await opAwardBid(b.team_username, c.id);
+      } else {
+        await opRefundFailedBid(b.team_username, c.id);
+      }
+    }
+  }
 }
 
 // 매칭권 자발적 판매: 현재 최소 주문 금액 × 개수 의 80% 환불 (만원 내림)

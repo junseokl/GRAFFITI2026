@@ -86,7 +86,7 @@
 
 | 테이블 | 컬럼 | 비고 |
 |---|---|---|
-| `game_state` | id PK(=1), current_round, current_phase, **team_count**, **avg_initial_seed** | 싱글톤. team_count/avg_initial_seed 은 수익률 공식에 사용, admin UI 에서 수정 가능 |
+| `game_state` | id PK(=1), current_round, current_phase, **team_count**, **avg_initial_seed**, **matching_top_n** | 싱글톤. team_count/avg_initial_seed 는 수익률 공식에 사용, matching_top_n 은 매칭권 자동 정산 시 회사별 상위 N 팀만 확정. 모두 admin UI 에서 수정 가능 |
 | `companies` | id SERIAL PK, name UNIQUE, min_order_price, **sort_order**, created_at | sort_order 로 드래그 순서 관리. UI 에선 ID 대신 "순번" (sort_order+1) 표시 |
 | `teams` | username PK, seed (CHECK >= 0) | seed 는 won 단위, 만원 배수 (앱이 강제) |
 | `tickets` | (team, company) PK, count | |
@@ -101,9 +101,11 @@
 (series-a, idle) → ... → (series-c, matching) → (ended, idle)
 ```
 
-[lib/game.ts](lib/game.ts) `computeNextState`. admin 의 **"다음 단계로 넘어가기"** 버튼(맨 아래 오른쪽). stock → results 전이 시 `settleStockRound` 자동 정산.
+[lib/game.ts](lib/game.ts) `computeNextState`. admin 의 **"다음 단계로 넘어가기"** 버튼(맨 아래 오른쪽).
+- **stock → results** 전이 시 `settleStockRound` 자동 수익률 정산
+- **matching → next round** 전이 시 `autoResolveMatchingPhase(matching_top_n)` 자동 매칭권 정산 (회사별 가격 상위 N 팀 확정, 나머지 50% 환불)
 
-> 게임 상태 섹션의 라운드/페이즈 직접 변경 박스는 escape hatch — 정산 skip.
+> 게임 상태 섹션의 라운드/페이즈 직접 변경 박스는 escape hatch — 두 자동 정산 모두 skip.
 
 ## 수익률 공식 (비대칭 σ)
 
@@ -148,14 +150,14 @@ router.refresh();
 | 함수 | 용도 |
 |---|---|
 | `setGameState(round, phase)` | 라운드/페이즈 직접 변경 (escape hatch) |
-| `setGameConfig(teamCount, avgInitialSeed)` | 수익률 공식용 파라미터 변경 |
-| `advanceToNextPhase()` | 정상 흐름. stock→results 시 자동 정산 |
+| `setGameConfig(teamCount, avgInitialSeed, matchingTopN)` | 수익률 공식 파라미터 + 매칭권 자동 정산 상위 N 변경 |
+| `advanceToNextPhase()` | 정상 흐름. stock→results 시 수익률 정산, matching→next 시 매칭권 자동 정산 |
 | `addCompany / updateCompany / deleteCompany` | 회사 CRUD. delete 시 sort_order 자동 압축 |
 | `reorderCompanies(orderedIds: number[])` | 드래그로 순서 변경 — 새 순서대로 sort_order 0..N-1 재할당 |
 | `setTeamSeed / deleteTeam / setTeamTickets` | 팀 직접 조정 |
 | `setInvestment / clearInvestment` | admin 대리 투자 |
 | `setBid / clearBid` | admin 대리 입찰 |
-| `awardBid / refundFailedBid` | 매칭권 승자 확정 / 패자 50% 환불 |
+| `awardBid / refundFailedBid` | (수동) 매칭권 개별 승자 확정 / 패자 50% 환불 — 자동 정산 외 보정용 |
 | `sellTickets` | admin 대리 매칭권 80% 판매 |
 
 ### [app/actions/player.ts](app/actions/player.ts) (세션 username 사용)
@@ -170,7 +172,7 @@ router.refresh();
 
 ### [lib/game.ts](lib/game.ts) 공유 ops (auth 검증 안 함)
 
-`opSetInvestment`, `opClearInvestment`, `opSetBid`, `opClearBid`, `opSellTickets`, `settleStockRound`, `readGameState`, `computeNextState`.
+`opSetInvestment`, `opClearInvestment`, `opSetBid`, `opClearBid`, `opSellTickets`, `opAwardBid`, `opRefundFailedBid`, `settleStockRound`, `autoResolveMatchingPhase(topN)`, `readGameState`, `computeNextState`.
 
 ## 라우트 / UI 구조
 
@@ -185,14 +187,14 @@ router.refresh();
 
 **AdminDashboard 섹션 순서**:
 1. 게임 상태 (escape hatch 라운드/페이즈 선택)
-2. **게임 설정** (team_count, avg_initial_seed) — 수익률 공식 영향
+2. **게임 설정** (team_count, avg_initial_seed, matching_top_n) — 수익률 공식 + 매칭권 자동 정산에 영향
 3. 회사 (추가 + 드래그 정렬 + 만원 단위 수정/삭제)
 4. 팀 (seed 만원 입력, 매칭권 개수, 미등록 계정 자동완성)
 5. 주식 단계 매트릭스 (phase=stock 시)
-6. 매칭권 단계 (phase=matching 시): 입찰 매트릭스 + 정산 리스트(top2 강조) + 자발 판매 폼
+6. 매칭권 단계 (phase=matching 시): 입찰 매트릭스 + 정산 리스트(상위 N 초록 강조) + 자발 판매 폼. 수동 "확정"/"50% 환불" 버튼은 자동 정산 외 보정용으로 유지
 7. SettledResultsPanel (round_results 있으면 항상)
 8. TicketHoldingsTable
-9. AdvanceButton (다음 단계로)
+9. AdvanceButton (다음 단계로) — matching 일 때는 자동 정산 노트 표시
 
 **PlayerView 섹션 (만원 단위 통일)**:
 1. 헤더 (라운드/페이즈, 내 seed 만원 표시)
@@ -213,7 +215,8 @@ router.refresh();
 |---|---|
 | 계정 추가/비번 변경 | `npm run build-auth-users -- admin:1234 test:test test2:test2 ...` → 출력 base64 를 `.env.local` 및 Vercel env `AUTH_USERS_B64` 에 교체. [accounts.md](accounts.md) 표도 갱신 |
 | 수익률 공식 튜닝 | [config/yield.ts](config/yield.ts) 6개 숫자 수정 → git push |
-| 팀 수·평균 시드 변경 | admin 대시보드의 "게임 설정" 섹션 (DB 에 저장됨, 재배포 불필요) |
+| 팀 수·평균 시드·매칭권 상위 N 변경 | admin 대시보드의 "게임 설정" 섹션 (DB 에 저장됨, 재배포 불필요) |
+| 게임 설명 페이지 힌트 수정 | [app/components/GameInfoTabs.tsx](app/components/GameInfoTabs.tsx) 의 `hint` stage 수정 — 공식·전략 텍스트 |
 | 회사 순서 변경 | admin 대시보드 회사 섹션 ⋮⋮ 핸들 드래그 |
 | DB 스키마 변경 후 적용 | `npm run db:reset && npm run db:init` (테스트 데이터 OK 가정) |
 | 로컬 개발 | `npm run dev` → http://localhost:3000 |
@@ -236,6 +239,8 @@ router.refresh();
 - **OneDrive 경로**: npm install 중 파일 잠금 발생 가능 — OneDrive 일시정지 후 재시도.
 - **드래그 동작**: HTML5 native. ⋮⋮ 핸들이 draggable=true, 행 자체가 drop target. 새 순서는 클라이언트에서 계산 후 `reorderCompanies(orderedIds)` 호출.
 - **회사 ID 표시 안 함**: SERIAL ID 는 삭제 후 빈 자리 생김 — UI 엔 sort_order 기준 1..N 의 "순번" 만 보임.
+- **db:init 은 idempotent**: 신규 컬럼 추가 시 `ALTER TABLE ADD COLUMN IF NOT EXISTS` 한 줄을 db-init.mjs 에 추가하면 기존 DB 도 db:reset 없이 자동 마이그레이션 (예: matching_top_n 이 이 패턴).
+- **게임 설명 페이지 (`/game/info`)**: 5개 탭 (Seed, Series A, B, C, 힌트). 힌트 탭에 수익률 공식과 전략 직관 표시. [GameInfoTabs.tsx](app/components/GameInfoTabs.tsx) 의 `STAGES` 배열 수정.
 
 ## 배포
 
@@ -249,6 +254,6 @@ router.refresh();
 
 - **매칭권 효용**: 게임 종료 후 별도 사용 (게임 중 카운트만 의미). 최종 = 팀별 seed + 회사별 매칭권 개수.
 - **80% 자발 판매** 와 **50% 패자 환불** 은 매칭 단계 내 별개 행동.
-- **매칭권 정산**: top 2 자동 판정 안 함. admin 이 정산 리스트에서 "확정" / "50% 환불" 손으로 누름. 동률도 admin 재량.
+- **매칭권 정산**: `advanceToNextPhase` 호출 시 자동으로 회사별 가격 상위 `matching_top_n` 팀이 확정되고 나머지는 50% 환불. 동률은 `team_username` 오름차순 안정 정렬로 끊음. admin 이 수동으로 개별 "확정" / "50% 환불" 도 가능 (보정용).
 - **seed 음수 불가**: DB CHECK 제약. 정산 페이아웃 `GREATEST(0, ...)` 클램프.
 - **모든 금액은 만원 단위**: 정산·환불 시 만원 단위 내림. 천원 이하는 모두 버림.
