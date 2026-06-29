@@ -36,7 +36,7 @@ export function PieChart({
   if (total <= 0) {
     return (
       <div
-        className="flex items-center justify-center text-xs text-gray-400 border border-dashed border-gray-300 rounded"
+        className="flex items-center justify-center rounded-lg border border-dashed border-[#cfd7cc] bg-[#fbfcfa] text-xs font-medium text-[#8a9488]"
         style={{ width: size, height: size }}
       >
         투자 없음
@@ -122,7 +122,7 @@ function PieTooltip({
   value: number;
 }) {
   return (
-    <div className="absolute top-1 left-1 bg-gray-900 text-white text-xs px-2 py-1 rounded pointer-events-none whitespace-nowrap z-10">
+    <div className="pointer-events-none absolute left-1 top-1 z-10 whitespace-nowrap rounded-md bg-[#151713] px-2 py-1 text-xs font-semibold text-white shadow-lg">
       {label} · {pct.toFixed(1)}% · {formatManwon(value)}
     </div>
   );
@@ -169,18 +169,23 @@ export function SettledResultsPanel({
   }
 
   return (
-    <section className="mb-6 p-4 border border-purple-300 bg-purple-50 rounded">
-      <h2 className="text-lg font-bold mb-1">
-        직전 정산 결과 — {ROUND_LABELS[settledRound]} 라운드
-      </h2>
-      <p className="text-xs text-gray-600 mb-3">
-        각 회사에 모든 팀이 투자한 금액 분포 (원그래프에 마우스를 올리면 팀 /
-        비율 / 금액 표시).
+    <section className="surface-panel panel-pad mb-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Results</p>
+          <h2 className="text-xl font-black">
+            {ROUND_LABELS[settledRound]} 라운드 정산
+          </h2>
+        </div>
+        <span className="phase-pill">회사별 투자 분포</span>
+      </div>
+      <p className="sr-only">
+        원그래프에 마우스를 올리면 팀, 비율, 금액을 확인할 수 있습니다.
       </p>
       {companies.length === 0 ? (
-        <p className="text-sm text-gray-500">회사가 없습니다.</p>
+        <p className="text-sm text-[#667065]">회사가 없습니다.</p>
       ) : (
-        <div className="flex flex-wrap gap-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {companies.map((c) => {
             const compInvestments = roundInvestments
               .filter((i) => i.company_id === c.id)
@@ -194,26 +199,33 @@ export function SettledResultsPanel({
               value: i.amount,
             }));
             return (
-              <div key={c.id} className="text-sm">
-                <div className="font-semibold">{c.name}</div>
-                <div className="text-xs text-gray-600 mb-1">
-                  수익률 {yieldByCompany.get(c.id) ?? 0}% · 총 투자{" "}
-                  {formatManwon(total)}
+              <div key={c.id} className="rounded-lg border border-[#dfe4dc] bg-[#fbfcfa] p-4 text-sm">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-base font-black">{c.name}</div>
+                    <div className="muted-label">총 투자 {formatManwon(total)}</div>
+                  </div>
+                  <div className="rounded-full bg-white px-3 py-1 text-sm font-black text-[#0f766e]">
+                    {yieldByCompany.get(c.id) ?? 0}%
+                  </div>
                 </div>
                 <PieChart slices={slices} />
-                <div className="mt-1 space-y-0.5">
+                <div className="mt-3 space-y-1">
                   {slices.map((s, i) => (
                     <div
                       key={s.label}
-                      className="flex items-center gap-1 text-xs"
+                      className="flex items-center justify-between gap-2 text-xs text-[#4e584d]"
                     >
-                      <span
-                        className="inline-block w-3 h-3 rounded-sm"
-                        style={{
-                          background: SLICE_COLORS[i % SLICE_COLORS.length],
-                        }}
-                      />
-                      {s.label}: {formatManwon(s.value)}
+                      <span className="flex items-center gap-1">
+                        <span
+                          className="inline-block h-3 w-3 rounded-sm"
+                          style={{
+                            background: SLICE_COLORS[i % SLICE_COLORS.length],
+                          }}
+                        />
+                        {s.label}
+                      </span>
+                      <span className="font-semibold">{formatManwon(s.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -244,34 +256,32 @@ export function TicketHoldingsTable({
     0;
 
   return (
-    <section className="mb-6 p-4 border border-gray-300 rounded">
-      <h2 className="text-lg font-bold mb-1">매칭권 보유 현황</h2>
-      <p className="text-xs text-gray-500 mb-3">
-        회사명 아래의 가격은 <strong>다음 라운드 매칭권 최소 주문 금액</strong>
-        (직전 매칭권 단계의 승자 중 최저가). 정산 전까지는 admin 이 설정한
-        초기값.
-      </p>
+    <section className="surface-panel panel-pad mb-6">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="eyebrow">Tickets</p>
+          <h2 className="text-xl font-black">매칭권 보유 현황</h2>
+        </div>
+        <span className="phase-pill">개수</span>
+      </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="table-modern">
           <thead>
-            <tr className="border-b border-gray-200 text-left">
-              <th className="py-1 px-2">팀 (개수)</th>
+            <tr>
+              <th>팀</th>
               {companies.map((c) => (
-                <th key={c.id} className="py-1 px-2 text-right">
-                  <div>{c.name}</div>
-                  <div className="text-xs text-gray-500 font-normal">
-                    {formatManwon(c.min_order_price)}
-                  </div>
+                <th key={c.id} className="text-right">
+                  {c.name}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {teams.map((t) => (
-              <tr key={t.username} className="border-b border-gray-100">
-                <td className="py-1 px-2 font-mono">{t.username}</td>
+              <tr key={t.username}>
+                <td className="font-mono font-semibold">{t.username}</td>
                 {companies.map((c) => (
-                  <td key={c.id} className="py-1 px-2 text-right">
+                  <td key={c.id} className="text-right font-semibold tabular-nums">
                     {get(t.username, c.id)}
                   </td>
                 ))}
@@ -289,9 +299,9 @@ export function TicketHoldingsTable({
 export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
   if (teams.length === 0) {
     return (
-      <section className="mb-6 p-4 border border-gray-300 rounded">
-        <h2 className="text-lg font-bold mb-3">전체 팀 시드</h2>
-        <p className="text-sm text-gray-500">등록된 팀이 없습니다.</p>
+      <section className="surface-panel panel-pad mb-6">
+        <h2 className="text-xl font-black">전체 팀 시드</h2>
+        <p className="text-sm text-[#667065]">등록된 팀이 없습니다.</p>
       </section>
     );
   }
@@ -299,25 +309,31 @@ export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
   const sorted = [...teams].sort((a, b) => b.seed - a.seed);
 
   return (
-    <section className="mb-6 p-4 border border-gray-300 rounded">
-      <h2 className="text-lg font-bold mb-1">전체 팀 시드</h2>
-      <p className="text-sm text-gray-600 mb-3">
-        합계: <strong>{formatManwon(total)}</strong>
-      </p>
-      <table className="w-full text-sm">
+    <section className="surface-panel panel-pad mb-6">
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Leaderboard</p>
+          <h2 className="text-xl font-black">전체 팀 시드</h2>
+        </div>
+        <div className="text-right">
+          <div className="muted-label">합계</div>
+          <div className="text-lg font-black">{formatManwon(total)}</div>
+        </div>
+      </div>
+      <table className="table-modern">
         <thead>
-          <tr className="border-b border-gray-200 text-left">
-            <th className="py-1 px-2">순위</th>
-            <th className="py-1 px-2">팀</th>
-            <th className="py-1 px-2 text-right">seed</th>
+          <tr>
+            <th>순위</th>
+            <th>팀</th>
+            <th className="text-right">seed</th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((t, idx) => (
-            <tr key={t.username} className="border-b border-gray-100">
-              <td className="py-1 px-2">{idx + 1}</td>
-              <td className="py-1 px-2 font-mono">{t.username}</td>
-              <td className="py-1 px-2 text-right">{formatManwon(t.seed)}</td>
+            <tr key={t.username}>
+              <td className="font-black tabular-nums">{idx + 1}</td>
+              <td className="font-mono font-semibold">{t.username}</td>
+              <td className="text-right font-black">{formatManwon(t.seed)}</td>
             </tr>
           ))}
         </tbody>

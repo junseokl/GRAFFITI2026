@@ -2,8 +2,12 @@ import { GameInfoTabs } from "@/app/components/GameInfoTabs";
 
 export default function GameInfoPage() {
   return (
-    <main className="max-w-5xl mx-auto px-5 py-10">
-      <h1 className="text-2xl font-bold mb-6">투자 게임 규칙 설명</h1>
+    <main className="page-shell max-w-6xl">
+      <header className="mb-6">
+        <h1 className="text-4xl font-semibold">
+          투자 게임 설명
+        </h1>
+      </header>
       <GameInfoTabs />
     </main>
   );

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { GameData } from "../types";
 import { ROUND_LABELS, PHASE_LABELS } from "../types";
+import { formatManwon } from "../format";
 import {
   SettledResultsPanel,
   TicketHoldingsTable,
@@ -21,31 +22,57 @@ export function DisplayView({ data }: { data: GameData }) {
   }, [router]);
 
   const state = data.state;
+  const totalSeed = data.teams.reduce((sum, team) => sum + team.seed, 0);
+  const ticketTotal = data.tickets.reduce((sum, ticket) => sum + ticket.count, 0);
 
   return (
-    <main className="max-w-7xl mx-auto px-6 py-8">
-      <header className="mb-8 text-center">
-        <div className="text-sm text-gray-500 mb-1">GRAFFITI2026 투자 게임</div>
-        <h1 className="text-4xl font-bold">
-          {state ? ROUND_LABELS[state.current_round] : "-"}{" "}
-          <span className="text-gray-400">/</span>{" "}
-          {state ? PHASE_LABELS[state.current_phase] : "-"}
-        </h1>
+    <main className="page-shell max-w-7xl">
+      <header className="surface-panel mb-6 overflow-hidden">
+        <div className="grid gap-0 lg:grid-cols-[1.5fr_1fr]">
+          <div className="bg-[#151713] p-6 text-white sm:p-8">
+            <p className="text-xs font-semibold uppercase text-[#b7c4b2]">
+              GRAFFITI2026 Investment Game
+            </p>
+            <h1 className="mt-4 text-4xl font-semibold sm:text-6xl">
+              {state ? ROUND_LABELS[state.current_round] : "-"}
+            </h1>
+            <div className="mt-4 inline-flex rounded-full bg-white/10 px-4 py-2 text-xl font-black">
+              {state ? PHASE_LABELS[state.current_phase] : "-"}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 bg-[#fbfcfa] p-5 sm:p-8">
+            <DisplayMetric label="총 seed" value={formatManwon(totalSeed)} />
+            <DisplayMetric label="참가 팀" value={`${data.teams.length}팀`} />
+            <DisplayMetric label="회사" value={`${data.companies.length}개`} />
+            <DisplayMetric label="매칭권" value={`${ticketTotal}개`} />
+          </div>
+        </div>
       </header>
 
-      <AllTeamsSeedTable teams={data.teams} />
-
-      <SettledResultsPanel
-        companies={data.companies}
-        investments={data.investments}
-        roundResults={data.roundResults}
-      />
-
-      <TicketHoldingsTable
-        companies={data.companies}
-        teams={data.teams}
-        tickets={data.tickets}
-      />
+      <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+        <div>
+          <AllTeamsSeedTable teams={data.teams} />
+          <TicketHoldingsTable
+            companies={data.companies}
+            teams={data.teams}
+            tickets={data.tickets}
+          />
+        </div>
+        <SettledResultsPanel
+          companies={data.companies}
+          investments={data.investments}
+          roundResults={data.roundResults}
+        />
+      </div>
     </main>
+  );
+}
+
+function DisplayMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-[#dfe4dc] bg-white p-4">
+      <div className="muted-label">{label}</div>
+      <div className="mt-1 text-2xl font-black tabular-nums">{value}</div>
+    </div>
   );
 }

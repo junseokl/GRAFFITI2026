@@ -64,55 +64,50 @@ export function PlayerView({
 
   const state = data.state;
   const myTeam = data.teams.find((t) => t.username === username) ?? null;
+  const myTickets = data.tickets.filter((t) => t.team_username === username);
+  const myCurrentInvestments = state
+    ? data.investments.filter(
+        (i) =>
+          i.round === state.current_round && i.team_username === username,
+      )
+    : [];
 
   return (
-    <main className="max-w-3xl mx-auto px-5 py-8">
-      <h1 className="text-2xl font-bold mb-1">내 팀 현황</h1>
-      <p className="text-sm text-gray-600 mb-4">팀: {username}</p>
+    <main className="page-shell max-w-5xl space-y-6">
+      <PlayerStatusHeader
+        username={username}
+        seed={myTeam?.seed}
+        round={state ? ROUND_LABELS[state.current_round] : "-"}
+        phase={state ? PHASE_LABELS[state.current_phase] : "-"}
+        activePhase={state?.current_phase}
+        ticketCount={myTickets.reduce((sum, t) => sum + t.count, 0)}
+      />
 
       {error && (
-        <div className="mb-4 px-4 py-3 bg-red-100 border border-red-300 rounded flex justify-between items-center">
-          <span className="text-red-800 text-sm">{error}</span>
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-[#fca5a5] bg-[#fee4e2] px-4 py-3 text-sm font-semibold text-[#b42318]">
+          <span>{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="text-red-800 font-bold px-2"
+            className="rounded-md px-2 py-1 hover:bg-white/50"
           >
-            ×
+            x
           </button>
         </div>
       )}
 
-      <div className="mb-4 p-4 border border-gray-300 rounded flex gap-8">
-        <div>
-          <div className="text-sm text-gray-600">현재 라운드</div>
-          <div className="text-lg font-semibold">
-            {state ? ROUND_LABELS[state.current_round] : "-"} /{" "}
-            {state ? PHASE_LABELS[state.current_phase] : "-"}
-          </div>
-        </div>
-        <div>
-          <div className="text-sm text-gray-600">내 seed</div>
-          <div className="text-3xl font-bold">
-            {myTeam ? formatManwon(myTeam.seed) : "—"}
-          </div>
-        </div>
-      </div>
-
       {!myTeam && (
-        <p className="mb-4 text-sm text-amber-700">
-          아직 admin 이 이 팀의 초기 seed 를 설정하지 않았습니다.
-        </p>
+        <section className="surface-panel panel-pad border-[#f59e0b]/40 bg-[#fffbeb]">
+          <p className="text-sm font-semibold text-[#92400e]">
+            아직 admin 이 이 팀의 초기 seed 를 설정하지 않았습니다.
+          </p>
+        </section>
       )}
 
       {state?.current_phase === "stock" && myTeam && (
         <InvestSection
           companies={data.companies}
-          investments={data.investments.filter(
-            (i) =>
-              i.round === state.current_round &&
-              i.team_username === username,
-          )}
+          investments={myCurrentInvestments}
           seed={myTeam.seed}
           run={run}
         />
@@ -130,10 +125,16 @@ export function PlayerView({
       {state?.current_phase === "matching" && myTeam && (
         <SellSection
           companies={data.companies}
-          tickets={data.tickets.filter((t) => t.team_username === username)}
+          tickets={myTickets}
           run={run}
         />
       )}
+
+      {state &&
+        state.current_phase !== "stock" &&
+        state.current_phase !== "matching" && (
+          <PassivePhasePanel phase={PHASE_LABELS[state.current_phase]} />
+        )}
 
       <MyResultsPanel data={data} username={username} />
 
@@ -149,6 +150,96 @@ export function PlayerView({
         tickets={data.tickets}
       />
     </main>
+  );
+}
+
+function PlayerStatusHeader({
+  username,
+  seed,
+  round,
+  phase,
+  activePhase,
+  ticketCount,
+}: {
+  username: string;
+  seed: number | undefined;
+  round: string;
+  phase: string;
+  activePhase: string | undefined;
+  ticketCount: number;
+}) {
+  return (
+    <section className="surface-panel overflow-hidden">
+      <div className="border-b border-[#dfe4dc] bg-[#fbfcfa] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="eyebrow">Player Console</p>
+            <h1 className="text-2xl font-semibold sm:text-3xl">
+              {username}
+            </h1>
+          </div>
+          <div className="phase-pill phase-pill-active">
+            {round} / {phase}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 p-5 sm:grid-cols-3">
+        <div className="metric-card">
+          <div className="muted-label">보유 seed</div>
+          <div className="mt-1 text-3xl font-black">
+            {seed !== undefined ? formatManwon(seed) : "-"}
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="muted-label">현재 라운드</div>
+          <div className="mt-1 text-2xl font-black">{round}</div>
+        </div>
+        <div className="metric-card">
+          <div className="muted-label">보유 매칭권</div>
+          <div className="mt-1 text-2xl font-black tabular-nums">
+            {ticketCount}개
+          </div>
+        </div>
+      </div>
+      <PhaseTimeline activePhase={activePhase} />
+    </section>
+  );
+}
+
+function PhaseTimeline({ activePhase }: { activePhase: string | undefined }) {
+  const phases = [
+    { id: "idle", label: "대기" },
+    { id: "stock", label: "투자" },
+    { id: "results", label: "결과" },
+    { id: "matching", label: "매칭권" },
+  ];
+
+  return (
+    <div className="flex gap-2 overflow-x-auto border-t border-[#dfe4dc] px-5 py-4">
+      {phases.map((p) => (
+        <span
+          key={p.id}
+          className={
+            "phase-pill shrink-0 " +
+            (activePhase === p.id ? "phase-pill-active" : "")
+          }
+        >
+          {p.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PassivePhasePanel({ phase }: { phase: string }) {
+  return (
+    <section className="surface-panel panel-pad">
+      <p className="eyebrow">Current Phase</p>
+      <h2 className="mt-1 text-xl font-black">{phase}</h2>
+      <p className="mt-2 text-sm text-[#667065]">
+        지금은 입력 가능한 액션이 없습니다.
+      </p>
+    </section>
   );
 }
 
@@ -168,17 +259,24 @@ function InvestSection({
   const investedTotal = investments.reduce((s, i) => s + i.amount, 0);
 
   return (
-    <section className="mb-6 p-4 border border-blue-300 bg-blue-50 rounded">
-      <h2 className="text-lg font-bold mb-1">투자하기</h2>
-      <p className="text-sm text-gray-700 mb-3">
-        남은 seed <strong>{formatManwon(seed)}</strong> · 이번 라운드 투자
-        합계 {formatManwon(investedTotal)}
-      </p>
+    <section className="surface-panel panel-pad">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Stock Phase</p>
+          <h2 className="text-2xl font-black">투자하기</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="phase-pill">남은 seed {formatManwon(seed)}</span>
+          <span className="phase-pill">
+            투자 합계 {formatManwon(investedTotal)}
+          </span>
+        </div>
+      </div>
 
       {companies.length === 0 ? (
-        <p className="text-sm text-gray-500">아직 등록된 회사가 없습니다.</p>
+        <p className="text-sm text-[#667065]">아직 등록된 회사가 없습니다.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-3">
           {companies.map((c) => {
             const inv = investments.find((i) => i.company_id === c.id);
             return (
@@ -192,10 +290,6 @@ function InvestSection({
           })}
         </div>
       )}
-      <p className="mt-3 text-xs text-gray-500">
-        모든 금액은 <strong>만원</strong> 단위. 보유 seed 를 초과해서 투자할
-        수 없습니다. 저장 시 seed 에서 즉시 차감되고, 취소하면 되돌아옵니다.
-      </p>
     </section>
   );
 }
@@ -212,36 +306,50 @@ function InvestRow({
   const [v, setV] = useState(String(wonToManwon(currentAmount)));
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <span className="w-40 font-semibold">{company.name}</span>
-      <span className="text-xs text-gray-500 w-32">
-        현재 투자 {formatManwon(currentAmount)}
-      </span>
-      <input
-        type="number"
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-28"
-      />
-      <span className="text-xs text-gray-500">만원</span>
-      <button
-        type="button"
-        onClick={() =>
-          run(() => playerSetInvestment(company.id, manwonToWon(Number(v))))
-        }
-        className="px-3 py-1 bg-gray-800 text-white rounded text-sm"
-      >
-        저장
-      </button>
-      {currentAmount > 0 && (
-        <button
-          type="button"
-          onClick={() => run(() => playerClearInvestment(company.id))}
-          className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm"
-        >
-          취소
-        </button>
-      )}
+    <div className="market-row">
+      <div className="grid gap-3 lg:grid-cols-[1fr_160px_260px] lg:items-center">
+        <div>
+          <div className="text-lg font-black">{company.name}</div>
+          <div className="muted-label">
+            현재 투자 {formatManwon(currentAmount)}
+          </div>
+        </div>
+        <label className="block">
+          <span className="muted-label">투자 금액</span>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="number"
+              value={v}
+              onChange={(e) => setV(e.target.value)}
+              className="field-input w-full"
+              min={0}
+            />
+            <span className="text-sm font-semibold text-[#667065]">만원</span>
+          </div>
+        </label>
+        <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+          <button
+            type="button"
+            onClick={() =>
+              run(() =>
+                playerSetInvestment(company.id, manwonToWon(Number(v))),
+              )
+            }
+            className="btn-primary"
+          >
+            저장
+          </button>
+          {currentAmount > 0 && (
+            <button
+              type="button"
+              onClick={() => run(() => playerClearInvestment(company.id))}
+              className="btn-danger"
+            >
+              취소
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -262,17 +370,22 @@ function BidSection({
   const bidTotal = bids.reduce((s, b) => s + b.price * b.count, 0);
 
   return (
-    <section className="mb-6 p-4 border border-green-300 bg-green-50 rounded">
-      <h2 className="text-lg font-bold mb-1">매칭권 구매</h2>
-      <p className="text-sm text-gray-700 mb-3">
-        남은 seed <strong>{formatManwon(seed)}</strong> · 현재 입찰에 묶인
-        금액 {formatManwon(bidTotal)}
-      </p>
+    <section className="surface-panel panel-pad">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Matching Phase</p>
+          <h2 className="text-2xl font-black">매칭권 구매</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="phase-pill">남은 seed {formatManwon(seed)}</span>
+          <span className="phase-pill">입찰 금액 {formatManwon(bidTotal)}</span>
+        </div>
+      </div>
 
       {companies.length === 0 ? (
-        <p className="text-sm text-gray-500">아직 등록된 회사가 없습니다.</p>
+        <p className="text-sm text-[#667065]">아직 등록된 회사가 없습니다.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-3">
           {companies.map((c) => {
             const bid = bids.find((b) => b.company_id === c.id);
             return (
@@ -286,12 +399,6 @@ function BidSection({
           })}
         </div>
       )}
-      <p className="mt-3 text-xs text-gray-500">
-        가격은 만원 단위. 회사 최소 주문 금액 이상이어야 합니다. 한 회사에는
-        하나의 가격으로만 입찰. 입찰하면 (가격 × 개수) 만큼 seed 에서 즉시
-        차감되고, 취소하면 전액 되돌아옵니다. 최종 매칭권 획득·정산은 admin
-        이 처리합니다.
-      </p>
     </section>
   );
 }
@@ -324,62 +431,74 @@ function BidRow({
   const canBid = priceValid && countValid && !tooLow;
 
   return (
-    <div className="border border-gray-200 rounded p-2 bg-white">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="w-40 font-semibold">{company.name}</span>
-        <span className="text-xs text-gray-500">
-          최소 {formatManwon(company.min_order_price)}
-        </span>
-        <span className="text-xs text-gray-600">
-          현재 입찰:{" "}
-          {currentBid
-            ? `${formatManwon(currentBid.price)} × ${currentBid.count}개 = ${formatManwon(currentBid.price * currentBid.count)}`
-            : "없음"}
-        </span>
-      </div>
-      <div className="flex items-center gap-2 flex-wrap mt-1">
-        <input
-          type="number"
-          placeholder="가격"
-          value={priceManwon}
-          onChange={(e) => setPriceManwon(e.target.value)}
-          className="border border-gray-300 px-2 py-1 rounded w-24"
-        />
-        <span className="text-xs text-gray-500">만원</span>
-        <input
-          type="number"
-          placeholder="개수"
-          value={count}
-          onChange={(e) => setCount(e.target.value)}
-          className="border border-gray-300 px-2 py-1 rounded w-20"
-        />
-        <button
-          type="button"
-          disabled={!canBid}
-          onClick={() =>
-            run(() => playerSetBid(company.id, priceWon, countNum))
-          }
-          className="px-3 py-1 bg-gray-800 text-white rounded text-sm disabled:opacity-40"
-        >
-          입찰
-        </button>
-        {currentBid && (
+    <div className="market-row">
+      <div className="grid gap-3 xl:grid-cols-[1fr_190px_120px_260px] xl:items-center">
+        <div>
+          <div className="text-lg font-black">{company.name}</div>
+          <div className="muted-label">
+            최소 {formatManwon(company.min_order_price)}
+          </div>
+          <div className="mt-1 text-sm text-[#667065]">
+            {currentBid
+              ? `현재 ${formatManwon(currentBid.price)} x ${currentBid.count}개`
+              : "현재 입찰 없음"}
+          </div>
+        </div>
+        <label className="block">
+          <span className="muted-label">가격</span>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="number"
+              placeholder="가격"
+              value={priceManwon}
+              onChange={(e) => setPriceManwon(e.target.value)}
+              className="field-input w-full"
+              min={0}
+            />
+            <span className="text-sm font-semibold text-[#667065]">만원</span>
+          </div>
+        </label>
+        <label className="block">
+          <span className="muted-label">개수</span>
+          <input
+            type="number"
+            placeholder="개수"
+            value={count}
+            onChange={(e) => setCount(e.target.value)}
+            className="field-input mt-1 w-full"
+            min={1}
+          />
+        </label>
+        <div className="flex flex-wrap items-end justify-between gap-2 xl:justify-end">
+          <div className="mr-auto xl:mr-0 xl:text-right">
+            <div className="muted-label">총액</div>
+            <div className="text-lg font-black">{formatManwon(costWon)}</div>
+            {tooLow && (
+              <div className="text-sm font-semibold text-[#b42318]">
+                금액이 낮습니다
+              </div>
+            )}
+          </div>
           <button
             type="button"
-            onClick={() => run(() => playerClearBid(company.id))}
-            className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm"
+            disabled={!canBid}
+            onClick={() =>
+              run(() => playerSetBid(company.id, priceWon, countNum))
+            }
+            className="btn-primary"
           >
-            취소
+            입찰
           </button>
-        )}
-        <span className="text-sm">
-          이 회사에 쓸 금액: <strong>{formatManwon(costWon)}</strong>
-        </span>
-        {tooLow && (
-          <span className="text-red-600 text-sm font-semibold">
-            금액이 낮습니다
-          </span>
-        )}
+          {currentBid && (
+            <button
+              type="button"
+              onClick={() => run(() => playerClearBid(company.id))}
+              className="btn-danger"
+            >
+              취소
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -404,16 +523,15 @@ function SellSection({
     .filter((o) => o.count > 0);
 
   return (
-    <section className="mb-6 p-4 border border-amber-300 bg-amber-50 rounded">
-      <h2 className="text-lg font-bold mb-1">매칭권 판매</h2>
-      <p className="text-sm text-gray-700 mb-3">
-        보유한 매칭권을 현재 회사 최소 주문 금액의 80% 가격으로 되팔 수
-        있습니다.
-      </p>
+    <section className="surface-panel panel-pad">
+      <div className="mb-5">
+        <p className="eyebrow">Ticket Market</p>
+        <h2 className="text-2xl font-black">매칭권 판매</h2>
+      </div>
       {owned.length === 0 ? (
-        <p className="text-sm text-gray-500">보유한 매칭권이 없습니다.</p>
+        <p className="text-sm text-[#667065]">보유한 매칭권이 없습니다.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-3">
           {owned.map((o) => (
             <SellRow
               key={`${o.company.id}-${o.count}`}
@@ -448,32 +566,45 @@ function SellRow({
     : 0;
 
   return (
-    <div className="flex items-center gap-2 flex-wrap border border-gray-200 rounded p-2 bg-white">
-      <span className="w-40 font-semibold">{company.name}</span>
-      <span className="text-xs text-gray-500">
-        보유 {owned}개 · 최소가 {formatManwon(company.min_order_price)}
-      </span>
-      <input
-        type="number"
-        placeholder="판매 개수"
-        value={count}
-        onChange={(e) => setCount(e.target.value)}
-        className="border border-gray-300 px-2 py-1 rounded w-28"
-      />
-      <button
-        type="button"
-        disabled={!valid}
-        onClick={() => run(() => playerSellTickets(company.id, countNum))}
-        className="px-3 py-1 bg-gray-800 text-white rounded text-sm disabled:opacity-40"
-      >
-        판매
-      </button>
-      <span className="text-sm">
-        예상 환불: <strong>{formatManwon(refund)}</strong>
-      </span>
-      {tooMany && (
-        <span className="text-red-600 text-sm">보유 개수보다 많습니다</span>
-      )}
+    <div className="market-row">
+      <div className="grid gap-3 lg:grid-cols-[1fr_140px_170px_220px] lg:items-center">
+        <div>
+          <div className="text-lg font-black">{company.name}</div>
+          <div className="muted-label">
+            보유 {owned}개 / 최소가 {formatManwon(company.min_order_price)}
+          </div>
+        </div>
+        <label className="block">
+          <span className="muted-label">판매 개수</span>
+          <input
+            type="number"
+            placeholder="개수"
+            value={count}
+            onChange={(e) => setCount(e.target.value)}
+            className="field-input mt-1 w-full"
+            min={1}
+          />
+        </label>
+        <div>
+          <div className="muted-label">예상 환불</div>
+          <div className="text-lg font-black">{formatManwon(refund)}</div>
+          {tooMany && (
+            <div className="text-sm font-semibold text-[#b42318]">
+              보유 개수보다 많습니다
+            </div>
+          )}
+        </div>
+        <div className="flex justify-start lg:justify-end">
+          <button
+            type="button"
+            disabled={!valid}
+            onClick={() => run(() => playerSellTickets(company.id, countNum))}
+            className="btn-primary"
+          >
+            판매
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -502,54 +633,67 @@ function MyResultsPanel({
   const myTeam = data.teams.find((t) => t.username === username);
 
   return (
-    <section className="mb-6 p-4 border border-purple-300 bg-purple-50 rounded">
-      <h2 className="text-lg font-bold mb-1">
-        내 팀 결과 — {ROUND_LABELS[settledRound]} 라운드
-      </h2>
+    <section className="surface-panel panel-pad">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">My Results</p>
+          <h2 className="text-2xl font-black">
+            {ROUND_LABELS[settledRound]} 라운드
+          </h2>
+        </div>
+        <div className="text-right">
+          <div className="muted-label">현재 seed</div>
+          <div className="text-lg font-black">
+            {myTeam ? formatManwon(myTeam.seed) : "-"}
+          </div>
+        </div>
+      </div>
       {myInvestments.length === 0 ? (
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-[#667065]">
           이 라운드에 투자한 내역이 없습니다.
         </p>
       ) : (
-        <table className="w-full text-sm mb-2">
-          <thead>
-            <tr className="border-b border-gray-200 text-left">
-              <th className="py-1">회사</th>
-              <th className="py-1 text-right">내 투자액</th>
-              <th className="py-1 text-right">수익률</th>
-              <th className="py-1 text-right">정산 후 회수액</th>
-            </tr>
-          </thead>
-          <tbody>
-            {myInvestments.map((i) => {
-              const company = data.companies.find(
-                (c) => c.id === i.company_id,
-              );
-              const y = yieldByCompany.get(i.company_id) ?? 0;
-              const payoutWon = Math.max(
-                0,
-                Math.floor((i.amount * (1 + y / 100)) / MANWON) * MANWON,
-              );
-              return (
-                <tr key={i.company_id} className="border-b border-gray-100">
-                  <td className="py-1">{company?.name ?? i.company_id}</td>
-                  <td className="py-1 text-right">
-                    {formatManwon(i.amount)}
-                  </td>
-                  <td className="py-1 text-right">{y}%</td>
-                  <td className="py-1 text-right">
-                    {formatManwon(payoutWon)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="table-modern">
+            <thead>
+              <tr>
+                <th>회사</th>
+                <th className="text-right">내 투자액</th>
+                <th className="text-right">수익률</th>
+                <th className="text-right">정산 후 회수액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {myInvestments.map((i) => {
+                const company = data.companies.find(
+                  (c) => c.id === i.company_id,
+                );
+                const y = yieldByCompany.get(i.company_id) ?? 0;
+                const payoutWon = Math.max(
+                  0,
+                  Math.floor((i.amount * (1 + y / 100)) / MANWON) * MANWON,
+                );
+                return (
+                  <tr key={i.company_id}>
+                    <td className="font-semibold">
+                      {company?.name ?? i.company_id}
+                    </td>
+                    <td className="text-right font-semibold">
+                      {formatManwon(i.amount)}
+                    </td>
+                    <td className="text-right font-black text-[#0f766e]">
+                      {y}%
+                    </td>
+                    <td className="text-right font-black">
+                      {formatManwon(payoutWon)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-      <p className="text-sm">
-        현재 내 팀 최종 seed:{" "}
-        <strong>{myTeam ? formatManwon(myTeam.seed) : "—"}</strong>
-      </p>
     </section>
   );
 }

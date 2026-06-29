@@ -84,32 +84,6 @@ export async function setGameState(
   });
 }
 
-// 게임 전체 초기화: 모든 진행 데이터(투자·입찰·매칭권·정산 결과) 삭제,
-// 모든 팀의 seed 를 game_state.avg_initial_seed 로 리셋, 라운드/페이즈를
-// (seed, idle) 로 복원. 회사·팀 자체와 게임 설정(team_count, avg, top_n)은 유지.
-export async function resetGame(): Promise<ActionResult> {
-  return guard(async () => {
-    const { avg_initial_seed } = await readGameState();
-
-    // 게임 데이터 전부 삭제 (companies, teams, game_state 는 유지)
-    await sql`DELETE FROM bids`;
-    await sql`DELETE FROM round_results`;
-    await sql`DELETE FROM investments`;
-    await sql`DELETE FROM tickets`;
-
-    // 모든 팀 seed 를 평균 시드 값으로 리셋
-    await sql`UPDATE teams SET seed = ${avg_initial_seed}`;
-
-    // 라운드/페이즈 복원
-    await sql`
-      UPDATE game_state
-      SET current_round = 'seed', current_phase = 'idle'
-      WHERE id = 1
-    `;
-    refresh();
-  });
-}
-
 // "다음 단계로 넘어가기": idle→stock→results→matching→(다음 라운드)
 // stock → results: 자동 수익률 정산
 // matching → next: 자동 매칭권 정산 (상위 topN 확정, 나머지 50% 환불)
