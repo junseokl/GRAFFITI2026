@@ -243,6 +243,7 @@ router.refresh();
 - **회사 ID 표시 안 함**: SERIAL ID 는 삭제 후 빈 자리 생김 — UI 엔 sort_order 기준 1..N 의 "순번" 만 보임.
 - **db:init 은 idempotent**: 신규 컬럼 추가 시 `ALTER TABLE ADD COLUMN IF NOT EXISTS` 한 줄을 db-init.mjs 에 추가하면 기존 DB 도 db:reset 없이 자동 마이그레이션 (예: matching_top_n 이 이 패턴).
 - **TicketHoldingsTable 헤더의 가격**: 각 회사 헤더 아래에 표시되는 가격은 `companies.min_order_price` 값. 매칭권 자동 정산 직후 이 값이 "승자 중 최저가" 로 자동 갱신되므로, 표가 자연스럽게 "다음 라운드의 매칭권 최소 가격" 을 보여주는 역할을 함.
+- **AdminDashboard CompanyRow remount 패턴**: [AdminDashboard.tsx](app/game/play/AdminDashboard.tsx) 의 회사 행 key 는 `${c.id}-${c.name}-${c.min_order_price}`. CompanyRow 내부 `useState` 가 mount 시 한 번만 초기화되어, key 가 `c.id` 만이었을 땐 자동 정산으로 DB 의 min_order_price 가 바뀌어도 admin input 이 stale 한 값을 계속 보여주는 버그가 있었음. prop 변동 시 remount 가 필요한 다른 행에도 같은 패턴 적용 필요.
 - **게임 설명 페이지 (`/game/info`)**: 5개 탭 (Seed, Series A, B, C, 힌트). 힌트 탭에 수익률 공식과 전략 직관 표시. [GameInfoTabs.tsx](app/components/GameInfoTabs.tsx) 의 `STAGES` 배열 수정.
 
 ## 배포
