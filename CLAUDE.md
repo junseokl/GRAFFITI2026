@@ -242,6 +242,7 @@ router.refresh();
 - **드래그 동작**: HTML5 native. ⋮⋮ 핸들이 draggable=true, 행 자체가 drop target. 새 순서는 클라이언트에서 계산 후 `reorderCompanies(orderedIds)` 호출.
 - **회사 ID 표시 안 함**: SERIAL ID 는 삭제 후 빈 자리 생김 — UI 엔 sort_order 기준 1..N 의 "순번" 만 보임.
 - **db:init 은 idempotent**: 신규 컬럼 추가 시 `ALTER TABLE ADD COLUMN IF NOT EXISTS` 한 줄을 db-init.mjs 에 추가하면 기존 DB 도 db:reset 없이 자동 마이그레이션 (예: matching_top_n 이 이 패턴).
+- **TicketHoldingsTable 헤더의 가격**: 각 회사 헤더 아래에 표시되는 가격은 `companies.min_order_price` 값. 매칭권 자동 정산 직후 이 값이 "승자 중 최저가" 로 자동 갱신되므로, 표가 자연스럽게 "다음 라운드의 매칭권 최소 가격" 을 보여주는 역할을 함.
 - **게임 설명 페이지 (`/game/info`)**: 5개 탭 (Seed, Series A, B, C, 힌트). 힌트 탭에 수익률 공식과 전략 직관 표시. [GameInfoTabs.tsx](app/components/GameInfoTabs.tsx) 의 `STAGES` 배열 수정.
 
 ## 배포
@@ -257,5 +258,6 @@ router.refresh();
 - **매칭권 효용**: 게임 종료 후 별도 사용 (게임 중 카운트만 의미). 최종 = 팀별 seed + 회사별 매칭권 개수.
 - **80% 자발 판매** 와 **50% 패자 환불** 은 매칭 단계 내 별개 행동.
 - **매칭권 정산**: `advanceToNextPhase` 호출 시 자동으로 회사별 가격 상위 `matching_top_n` 팀이 확정되고 나머지는 50% 환불. 동률은 `team_username` 오름차순 안정 정렬로 끊음. admin 이 수동으로 개별 "확정" / "50% 환불" 도 가능 (보정용).
+- **자동 min_order_price 갱신**: 매칭권 자동 정산 종료 시 회사의 `min_order_price` 가 **승자 중 최저가** 로 자동 업데이트 (= 다음 라운드 매칭권 최소 주문 금액). 승자가 없으면 변경 없음. 결과적으로 인기 회사일수록 다음 라운드 매칭권 가격이 점점 비싸짐.
 - **seed 음수 불가**: DB CHECK 제약. 정산 페이아웃 `GREATEST(0, ...)` 클램프.
 - **모든 금액은 만원 단위**: 정산·환불 시 만원 단위 내림. 천원 이하는 모두 버림.

@@ -245,15 +245,23 @@ export function TicketHoldingsTable({
 
   return (
     <section className="mb-6 p-4 border border-gray-300 rounded">
-      <h2 className="text-lg font-bold mb-3">매칭권 보유 현황 (개)</h2>
+      <h2 className="text-lg font-bold mb-1">매칭권 보유 현황</h2>
+      <p className="text-xs text-gray-500 mb-3">
+        회사명 아래의 가격은 <strong>다음 라운드 매칭권 최소 주문 금액</strong>
+        (직전 매칭권 단계의 승자 중 최저가). 정산 전까지는 admin 이 설정한
+        초기값.
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-left">
-              <th className="py-1 px-2">팀</th>
+              <th className="py-1 px-2">팀 (개수)</th>
               {companies.map((c) => (
                 <th key={c.id} className="py-1 px-2 text-right">
-                  {c.name}
+                  <div>{c.name}</div>
+                  <div className="text-xs text-gray-500 font-normal">
+                    {formatManwon(c.min_order_price)}
+                  </div>
                 </th>
               ))}
             </tr>

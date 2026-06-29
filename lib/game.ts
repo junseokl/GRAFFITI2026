@@ -321,6 +321,8 @@ export async function opRefundFailedBid(
 
 // 매칭권 단계 자동 정산: 회사별로 가격 내림차순 정렬 → 상위 topN 팀 확정,
 // 나머지 50% 환불. 동률은 team_username 오름차순으로 안정 정렬.
+// 정산 후 회사 min_order_price 를 "승자 중 최저가" 로 자동 업데이트 (= 다음
+// 라운드의 매칭권 최소 주문 금액). 승자가 없으면 변경 안 함.
 export async function autoResolveMatchingPhase(topN: number): Promise<void> {
   if (!Number.isInteger(topN) || topN < 0) {
     throw new Error("매칭권 상위 N 값은 0 이상의 정수여야 합니다");
@@ -333,13 +335,20 @@ export async function autoResolveMatchingPhase(topN: number): Promise<void> {
       ORDER BY price DESC, team_username ASC
     `) as { team_username: string; price: number; count: number }[];
 
+    const winnerPrices: number[] = [];
     for (let i = 0; i < bids.length; i++) {
       const b = bids[i];
       if (i < topN) {
+        winnerPrices.push(Number(b.price));
         await opAwardBid(b.team_username, c.id);
       } else {
         await opRefundFailedBid(b.team_username, c.id);
       }
+    }
+
+    if (winnerPrices.length > 0) {
+      const newMinPrice = Math.min(...winnerPrices);
+      await sql`UPDATE companies SET min_order_price = ${newMinPrice} WHERE id = ${c.id}`;
     }
   }
 }
