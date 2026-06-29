@@ -434,7 +434,7 @@ function CompaniesSection({
             <tbody>
               {companies.map((c, idx) => (
                 <CompanyRow
-                  key={c.id}
+                  key={`${c.id}-${c.name}-${c.min_order_price}`}
                   company={c}
                   positionLabel={idx + 1}
                   run={run}
