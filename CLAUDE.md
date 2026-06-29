@@ -152,6 +152,7 @@ router.refresh();
 | `setGameState(round, phase)` | 라운드/페이즈 직접 변경 (escape hatch) |
 | `setGameConfig(teamCount, avgInitialSeed, matchingTopN)` | 수익률 공식 파라미터 + 매칭권 자동 정산 상위 N 변경 |
 | `advanceToNextPhase()` | 정상 흐름. stock→results 시 수익률 정산, matching→next 시 매칭권 자동 정산 |
+| `resetGame()` | 전체 초기화: bids/round_results/investments/tickets 삭제, 팀 seed → avg_initial_seed, 라운드/페이즈 → (seed, idle). 회사·팀·게임 설정 유지 |
 | `addCompany / updateCompany / deleteCompany` | 회사 CRUD. delete 시 sort_order 자동 압축 |
 | `reorderCompanies(orderedIds: number[])` | 드래그로 순서 변경 — 새 순서대로 sort_order 0..N-1 재할당 |
 | `setTeamSeed / deleteTeam / setTeamTickets` | 팀 직접 조정 |
@@ -186,7 +187,7 @@ router.refresh();
 `/game/play/display` 는 admin 대시보드 우측 상단의 "큰 화면용 디스플레이 열기 ↗" 링크로 새 탭에서 열기 가능. 게임 진행 중 큰 모니터에는 display 만 띄우고, 별도 노트북에서 admin 대시보드로 조작.
 
 **AdminDashboard 섹션 순서**:
-1. 게임 상태 (escape hatch 라운드/페이즈 선택)
+1. 게임 상태 (escape hatch 라운드/페이즈 선택 + **게임 초기화** 빨간 버튼)
 2. **게임 설정** (team_count, avg_initial_seed, matching_top_n) — 수익률 공식 + 매칭권 자동 정산에 영향
 3. 회사 (추가 + 드래그 정렬 + 만원 단위 수정/삭제)
 4. 팀 (seed 만원 입력, 매칭권 개수, 미등록 계정 자동완성)
@@ -233,6 +234,7 @@ router.refresh();
 - **`investments.round` PK 컬럼**: 정산 후에도 안 지움. 분포 pie chart 와 결과 패널이 이 history 를 읽음.
 - **정산 idempotency**: `settleStockRound` 는 `round_results` 가 이미 있으면 no-op. 재진입 안전.
 - **manual setGameState 는 정산 skip**: 정상 흐름은 항상 advanceToNextPhase 사용.
+- **manual rewind 의 함정**: setGameState 로 라운드를 거꾸로 돌려도 `round_results` 와 `investments` history 는 남아있음 → 재정산은 idempotent 가드(`SELECT 1 FROM round_results`)에 막혀 skip → 투자 차감만 되고 페이아웃이 안 들어와 seed 가 사라진 것처럼 보임. 처음부터 다시 하려면 **게임 초기화** 버튼 사용.
 - **bid 의 seed 차감**: 입찰 시 `price × count` 즉시 차감. clearBid 는 전액 환불, awardBid 는 환불 없음 (매칭권 전환), refundFailedBid 는 50% 환불 (만원 내림).
 - **opSellTickets 환불**: `floor(min_order_price × count × 0.8 / 10000) * 10000`
 - **세션 만료 7일**: [lib/auth.ts](lib/auth.ts) `MAX_AGE_SECONDS`.
