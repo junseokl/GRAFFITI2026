@@ -119,9 +119,10 @@ mean(M)   = μ_max − 2·μ_max / (1 + k·M)
 k = k_scale / (team_count × avg_initial_seed)    ← DB game_state 에서 읽음
 ```
 
-- 파라미터: [config/yield.ts](config/yield.ts) (`u_max=5, σ_up_base=10, σ_up_bonus=20, σ_down_base=15, σ_down_growth=5, k_scale=10`)
+- 파라미터: [config/yield.ts](config/yield.ts) (`u_max=5, σ_up_base=10, σ_up_bonus=17, σ_down_base=15, σ_down_growth=3, k_scale=10`)
 - team_count, avg_initial_seed 는 DB 에서 읽음 (admin UI 게임 설정 섹션에서 수정 가능). ★ 테스트 때 작은 값으로 바꿔야 공식이 의도대로 동작 (예: test 계정 2개로 1000만원 seed 면 team_count=2, avg_initial_seed=10000000).
-- σ_up_bonus > σ_down_growth 라서 고점 변화 폭이 저점 변화 폭보다 큼.
+- `|2·u_max − σ_up_bonus|` = `|2·u_max − σ_down_growth|` = 7 → M 변화에 따른 저점·고점 변화량이 ≈ 균형 (각 ~5.7%). σ_up_bonus 를 σ_down_growth 보다 크게 두는 건 같지만, 그 차이가 너무 크면 고점 변동만 가팔라져 밸런스 깨짐.
+- 20팀·평균 1000만원 기준 분포 (M=풀의 %): 1% → 평균 −1.8% / 저점 −19% / 고점 +21%. 10% → +0.5% / −17% / +19%. 100% → +2.7% / −14% / +16%.
 - 구현: [lib/game.ts](lib/game.ts) `computeYieldPct(M, teamCount, avgInitialSeed)`. `settleStockRound` 가 game_state 에서 두 값을 읽고 회사별 SUM 후 호출 → 만원 단위 내림 적용.
 
 ## 인증·권한
