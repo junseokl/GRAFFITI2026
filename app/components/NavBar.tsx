@@ -6,81 +6,88 @@ export async function NavBar() {
   const notionUrl = process.env.NEXT_PUBLIC_NOTION_URL;
 
   return (
-    <nav className="flex items-center gap-2 px-5 py-3 bg-gray-100 border-b border-gray-300">
-      <span className="font-bold text-lg mr-4">GRAFFITI2026</span>
-
-      <Link
-        href="/"
-        className="px-4 py-2 rounded text-gray-800 hover:bg-gray-200"
-      >
-        Home
-      </Link>
-
-      {notionUrl ? (
-        <a
-          href={notionUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 py-2 rounded text-gray-800 hover:bg-gray-200"
+    <nav className="sticky top-0 z-30 border-b border-white/10 bg-[#03111f]/95 px-4 py-3 text-white backdrop-blur sm:px-6">
+      <div className="mx-auto flex max-w-7xl items-center gap-2">
+        <Link
+          href="/"
+          className="mr-3 rounded-md px-2 py-1 text-lg font-semibold text-white"
         >
-          Notion
-        </a>
-      ) : (
-        <span
-          className="px-4 py-2 rounded text-gray-400 cursor-not-allowed"
-          title="Notion 링크가 아직 등록되지 않았습니다"
+          GRAFFITI2026
+        </Link>
+
+        <Link
+          href="/"
+          className="rounded-md px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-white/10 hover:text-white"
         >
-          Notion
-        </span>
-      )}
+          Home
+        </Link>
 
-      <div className="relative group">
-        <span className="inline-block px-4 py-2 rounded text-gray-800 cursor-default group-hover:bg-gray-200">
-          Investment Game
-        </span>
-        <div className="absolute top-full left-0 hidden group-hover:block bg-gray-800 rounded min-w-full whitespace-nowrap">
-          <Link
-            href="/game/info"
-            className="block px-4 py-2 text-white hover:bg-gray-700"
+        {notionUrl ? (
+          <a
+            href={notionUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md px-3 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-white/10 hover:text-white"
           >
-            게임 설명
-          </Link>
-          <Link
-            href="/game/play"
-            className="block px-4 py-2 text-white hover:bg-gray-700"
-          >
-            플레이
-          </Link>
-        </div>
-      </div>
-
-      <div className="ml-auto">
-        {session ? (
-          <div className="relative group">
-            <span className="inline-block px-4 py-2 rounded font-semibold text-gray-800 cursor-default group-hover:bg-gray-200">
-              {session.username}
-            </span>
-            <form
-              action="/api/logout"
-              method="POST"
-              className="absolute top-full right-0 hidden group-hover:block"
-            >
-              <button
-                type="submit"
-                className="px-4 py-2 bg-gray-800 text-white rounded whitespace-nowrap hover:bg-gray-700"
-              >
-                로그아웃
-              </button>
-            </form>
-          </div>
+            Notion
+          </a>
         ) : (
-          <Link
-            href="/login"
-            className="px-4 py-2 rounded text-gray-800 hover:bg-gray-200"
+          <span
+            className="rounded-md px-3 py-2 text-sm font-semibold text-[#64748b]"
+            title="Notion 링크가 아직 등록되지 않았습니다"
           >
-            Login
-          </Link>
+            Notion
+          </span>
         )}
+
+        <div className="group relative">
+          <span className="inline-block rounded-md px-3 py-2 text-sm font-semibold text-[#cbd5e1] group-hover:bg-white/10 group-hover:text-white">
+            Investment Game
+          </span>
+          <div className="absolute left-0 top-full hidden min-w-40 overflow-hidden rounded-lg border border-white/10 bg-[#061a2e] shadow-2xl group-hover:block">
+            <Link
+              href="/game/info"
+              className="block px-4 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-white/10 hover:text-white"
+            >
+              게임 설명
+            </Link>
+            <Link
+              href="/game/play"
+              className="block px-4 py-2 text-sm font-semibold text-[#cbd5e1] hover:bg-white/10 hover:text-white"
+            >
+              플레이
+            </Link>
+          </div>
+        </div>
+
+        <div className="ml-auto">
+          {session ? (
+            <div className="group relative">
+              <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-sm font-semibold text-white group-hover:bg-white/10">
+                {session.username}
+              </span>
+              <form
+                action="/api/logout"
+                method="POST"
+                className="absolute right-0 top-full hidden pt-2 group-hover:block"
+              >
+                <button
+                  type="submit"
+                  className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-[#03111f] shadow-lg hover:bg-[#e0f2fe]"
+                >
+                  로그아웃
+                </button>
+              </form>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-white/15 px-4 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              Login
+            </Link>
+          )}
+        </div>
       </div>
     </nav>
   );

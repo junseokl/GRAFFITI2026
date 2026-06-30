@@ -7,7 +7,6 @@ import {
   setGameState,
   setGameConfig,
   advanceToNextPhase,
-  resetGame,
   addCompany,
   updateCompany,
   deleteCompany,
@@ -274,34 +273,6 @@ function GameStateSection({ state, run }: { state: GameState; run: RunFn }) {
           (정상 진행은 맨 아래 "다음 단계로" 버튼 사용 — 이건 수동 보정용)
         </span>
       </div>
-
-      <div className="mt-4 pt-3 border-t border-red-200 flex items-center gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={() => {
-            if (
-              confirm(
-                "정말 게임을 처음부터 다시 시작할까요?\n\n" +
-                  "• 삭제: 모든 투자·입찰·매칭권·정산 결과\n" +
-                  "• 리셋: 모든 팀 seed → 평균 시드 (" +
-                  formatManwon(state.avg_initial_seed) +
-                  ")\n" +
-                  "• 라운드/페이즈 → Seed / 대기\n\n" +
-                  "유지: 회사, 팀 목록, 게임 설정값",
-              )
-            ) {
-              run(() => resetGame());
-            }
-          }}
-          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
-        >
-          게임 초기화 (처음부터 다시 시작)
-        </button>
-        <span className="text-xs text-gray-500">
-          모든 진행 데이터(투자·정산·매칭권) 삭제 + 팀 seed 평균값으로 복원 +
-          (Seed, 대기) 로 이동.
-        </span>
-      </div>
     </section>
   );
 }
@@ -434,7 +405,7 @@ function CompaniesSection({
             <tbody>
               {companies.map((c, idx) => (
                 <CompanyRow
-                  key={`${c.id}-${c.name}-${c.min_order_price}`}
+                  key={c.id}
                   company={c}
                   positionLabel={idx + 1}
                   run={run}

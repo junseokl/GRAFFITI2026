@@ -41,32 +41,34 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 font-semibold">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <label className="flex flex-col gap-1.5 text-sm font-black">
         ID
         <input
           name="username"
           type="text"
           autoComplete="username"
           required
-          className="p-2 border border-gray-300 rounded font-normal"
+          className="field-input font-normal"
         />
       </label>
-      <label className="flex flex-col gap-1 font-semibold">
+      <label className="flex flex-col gap-1.5 text-sm font-black">
         비밀번호
         <input
           name="password"
           type="password"
           autoComplete="current-password"
           required
-          className="p-2 border border-gray-300 rounded font-normal"
+          className="field-input font-normal"
         />
       </label>
-      <p className="text-red-600 min-h-[1.25rem] m-0">{error}</p>
+      <p className="m-0 min-h-[1.25rem] text-sm font-semibold text-[#b42318]">
+        {error}
+      </p>
       <button
         type="submit"
         disabled={submitting}
-        className="p-2 bg-gray-800 text-white rounded disabled:opacity-50"
+        className="btn-primary w-full"
       >
         {submitting ? "로그인 중..." : "로그인"}
       </button>
