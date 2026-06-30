@@ -65,6 +65,14 @@ export function PlayerView({
   const state = data.state;
   const myTeam = data.teams.find((t) => t.username === username) ?? null;
   const myTickets = data.tickets.filter((t) => t.team_username === username);
+  // 내 시드 순위 계산 (seed 내림차순, 동률이면 같은 등수)
+  const sortedSeeds = [...data.teams]
+    .map((t) => t.seed)
+    .sort((a, b) => b - a);
+  const myRank =
+    myTeam !== null
+      ? sortedSeeds.findIndex((s) => s <= myTeam.seed) + 1
+      : null;
   const myCurrentInvestments = state
     ? data.investments.filter(
         (i) =>
@@ -77,6 +85,8 @@ export function PlayerView({
       <PlayerStatusHeader
         username={username}
         seed={myTeam?.seed}
+        rank={myRank}
+        totalTeams={data.teams.length}
         round={state ? ROUND_LABELS[state.current_round] : "-"}
         phase={state ? PHASE_LABELS[state.current_phase] : "-"}
         activePhase={state?.current_phase}
@@ -156,6 +166,8 @@ export function PlayerView({
 function PlayerStatusHeader({
   username,
   seed,
+  rank,
+  totalTeams,
   round,
   phase,
   activePhase,
@@ -163,6 +175,8 @@ function PlayerStatusHeader({
 }: {
   username: string;
   seed: number | undefined;
+  rank: number | null;
+  totalTeams: number;
   round: string;
   phase: string;
   activePhase: string | undefined;
@@ -183,11 +197,20 @@ function PlayerStatusHeader({
           </div>
         </div>
       </div>
-      <div className="grid gap-3 p-5 sm:grid-cols-3">
+      <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
         <div className="metric-card">
           <div className="muted-label">보유 seed</div>
           <div className="mt-1 text-3xl font-black">
             {seed !== undefined ? formatManwon(seed) : "-"}
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="muted-label">시드 순위</div>
+          <div className="mt-1 text-3xl font-black tabular-nums">
+            {rank !== null ? `${rank}위` : "-"}
+            <span className="ml-1 text-base font-semibold text-[#667065]">
+              / {totalTeams}팀
+            </span>
           </div>
         </div>
         <div className="metric-card">

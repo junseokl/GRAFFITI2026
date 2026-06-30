@@ -7,6 +7,7 @@ import {
   setGameState,
   setGameConfig,
   advanceToNextPhase,
+  resetGame,
   addCompany,
   updateCompany,
   deleteCompany,
@@ -271,6 +272,28 @@ function GameStateSection({ state, run }: { state: GameState; run: RunFn }) {
         </button>
         <span className="text-xs text-gray-500">
           (정상 진행은 맨 아래 "다음 단계로" 버튼 사용 — 이건 수동 보정용)
+        </span>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              !confirm(
+                "정말 초기화하시겠습니까?\n\n모든 투자/입찰/매칭권/정산 결과가 삭제되고, 팀 seed 가 평균 시드머니로 재설정됩니다.\n회사·팀·게임 설정은 유지됩니다.",
+              )
+            )
+              return;
+            run(() => resetGame());
+          }}
+          className="px-3 py-1 bg-red-600 text-white rounded text-sm font-semibold hover:bg-red-700"
+        >
+          게임 초기화
+        </button>
+        <span className="text-xs text-gray-500">
+          bids / investments / tickets / round_results 삭제 + 팀 seed →
+          avg_initial_seed + 라운드/페이즈 → (seed, idle).
         </span>
       </div>
     </section>

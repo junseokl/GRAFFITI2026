@@ -124,9 +124,14 @@ export default function HomePage() {
             망설이지 마세요. GRAFFITI 2026는 당신의 아이디어가 현실이 되는
             무대입니다.
           </p>
-          <div className="mt-8 inline-flex rounded-full border border-[#67a6d8]/40 px-5 py-2 text-sm font-medium text-[#b9d7f2]">
-            인스타 링크 연결
-          </div>
+          <a
+            href="https://www.instagram.com/icistskaist/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-8 inline-flex items-center gap-2 rounded-full border border-[#67a6d8]/40 px-5 py-2 text-sm font-medium text-[#b9d7f2] transition hover:border-[#b9d7f2] hover:bg-white/10 hover:text-white"
+          >
+            @icistskaist 인스타그램 →
+          </a>
         </div>
       </section>
 

@@ -41,9 +41,15 @@ const statements = [
      id SERIAL PRIMARY KEY,
      name TEXT UNIQUE NOT NULL,
      min_order_price INTEGER NOT NULL DEFAULT 0 CHECK (min_order_price >= 0),
+     initial_min_order_price INTEGER NOT NULL DEFAULT 0 CHECK (initial_min_order_price >= 0),
      sort_order INTEGER NOT NULL DEFAULT 0,
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+
+  // initial_min_order_price: 게임 초기화 시 min_order_price 를 이 값으로 복구.
+  // 기존 DB 마이그레이션: 컬럼 없으면 추가하고 현재 min_order_price 값으로 채움.
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS initial_min_order_price INTEGER NOT NULL DEFAULT 0 CHECK (initial_min_order_price >= 0)`,
+  `UPDATE companies SET initial_min_order_price = min_order_price WHERE initial_min_order_price = 0 AND min_order_price > 0`,
 
   // 시드는 won 단위, 10,000 의 배수만 들어옴 (앱에서 강제). DB CHECK 로는 음수만 막음.
   `CREATE TABLE IF NOT EXISTS teams (
