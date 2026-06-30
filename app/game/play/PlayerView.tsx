@@ -11,8 +11,17 @@ import {
   type ActionResult,
 } from "@/app/actions/player";
 import type { Bid, Company, GameData, Investment, Ticket } from "./types";
-import { ROUND_LABELS, PHASE_LABELS, latestSettledRound } from "./types";
-import { SettledResultsPanel, TicketHoldingsTable } from "./shared";
+import {
+  ROUND_LABELS,
+  PHASE_LABELS,
+  previousPlayableRound,
+} from "./types";
+import {
+  SettledResultsPanel,
+  TicketHoldingsTable,
+  formatSignedManwon,
+  moneyDeltaClass,
+} from "./shared";
 import { formatManwon, manwonToWon, wonToManwon, MANWON } from "./format";
 
 type RunFn = (
@@ -71,6 +80,10 @@ export function PlayerView({
           i.round === state.current_round && i.team_username === username,
       )
     : [];
+  const matchingResultRound =
+    state?.current_phase === "idle"
+      ? previousPlayableRound(state.current_round)
+      : null;
 
   return (
     <main className="page-shell max-w-5xl space-y-6">
@@ -140,6 +153,7 @@ export function PlayerView({
 
       <SettledResultsPanel
         companies={data.companies}
+        teams={data.teams}
         investments={data.investments}
         roundResults={data.roundResults}
       />
@@ -148,6 +162,8 @@ export function PlayerView({
         companies={data.companies}
         teams={data.teams}
         tickets={data.tickets}
+        matchingResults={data.matchingResults}
+        deltaRound={matchingResultRound}
       />
     </main>
   );
@@ -618,19 +634,45 @@ function MyResultsPanel({
   data: GameData;
   username: string;
 }) {
-  const settledRound = latestSettledRound(data.roundResults);
-  if (!settledRound) return null;
+  const state = data.state;
+  if (!state) return null;
+
+  if (state.current_phase === "idle") {
+    return <MyMatchingResultsPanel data={data} username={username} />;
+  }
+
+  if (state.current_phase !== "results") return null;
 
   const myInvestments = data.investments.filter(
-    (i) => i.round === settledRound && i.team_username === username,
+    (i) => i.round === state.current_round && i.team_username === username,
   );
   const yieldByCompany = new Map<number, number>();
   for (const rr of data.roundResults) {
-    if (rr.round === settledRound) {
+    if (rr.round === state.current_round) {
       yieldByCompany.set(rr.company_id, rr.yield_pct);
     }
   }
   const myTeam = data.teams.find((t) => t.username === username);
+  const resultRows = myInvestments.map((investment) => {
+    const company = data.companies.find(
+      (c) => c.id === investment.company_id,
+    );
+    const yieldPct = yieldByCompany.get(investment.company_id) ?? 0;
+    const payout = Math.max(
+      0,
+      Math.floor((investment.amount * (1 + yieldPct / 100)) / MANWON) * MANWON,
+    );
+    return {
+      companyName: company?.name ?? String(investment.company_id),
+      amount: investment.amount,
+      yieldPct,
+      payout,
+      profit: payout - investment.amount,
+    };
+  });
+  const totalInvested = resultRows.reduce((sum, row) => sum + row.amount, 0);
+  const totalPayout = resultRows.reduce((sum, row) => sum + row.payout, 0);
+  const totalProfit = resultRows.reduce((sum, row) => sum + row.profit, 0);
 
   return (
     <section className="surface-panel panel-pad">
@@ -638,14 +680,8 @@ function MyResultsPanel({
         <div>
           <p className="eyebrow">My Results</p>
           <h2 className="text-2xl font-black">
-            {ROUND_LABELS[settledRound]} 라운드
+            {ROUND_LABELS[state.current_round]} 투자 결과
           </h2>
-        </div>
-        <div className="text-right">
-          <div className="muted-label">현재 seed</div>
-          <div className="text-lg font-black">
-            {myTeam ? formatManwon(myTeam.seed) : "-"}
-          </div>
         </div>
       </div>
       {myInvestments.length === 0 ? (
@@ -653,39 +689,155 @@ function MyResultsPanel({
           이 라운드에 투자한 내역이 없습니다.
         </p>
       ) : (
+        <>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <ResultMetric label="총 수익" value={formatSignedManwon(totalProfit)} tone={totalProfit} />
+            <ResultMetric label="총 회수" value={formatManwon(totalPayout)} />
+            <ResultMetric label="총 투자" value={formatManwon(totalInvested)} />
+            <ResultMetric
+              label="현재 seed"
+              value={myTeam ? formatManwon(myTeam.seed) : "-"}
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="table-modern">
+              <thead>
+                <tr>
+                  <th>회사</th>
+                  <th className="text-right">내 투자액</th>
+                  <th className="text-right">수익률</th>
+                  <th className="text-right">정산 후 회수액</th>
+                  <th className="text-right">수익</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultRows.map((row) => (
+                  <tr key={row.companyName}>
+                    <td className="font-semibold">{row.companyName}</td>
+                    <td className="text-right font-semibold">
+                      {formatManwon(row.amount)}
+                    </td>
+                    <td
+                      className={
+                        "text-right font-black tabular-nums " +
+                        (row.yieldPct > 0
+                          ? "text-[#166534]"
+                          : row.yieldPct < 0
+                            ? "text-[#991b1b]"
+                            : "text-[#4e584d]")
+                      }
+                    >
+                      {row.yieldPct > 0 ? `+${row.yieldPct}%` : `${row.yieldPct}%`}
+                    </td>
+                    <td className="text-right font-black">
+                      {formatManwon(row.payout)}
+                    </td>
+                    <td
+                      className={
+                        "text-right font-black tabular-nums " +
+                        moneyDeltaClass(row.profit)
+                      }
+                    >
+                      {formatSignedManwon(row.profit)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function MyMatchingResultsPanel({
+  data,
+  username,
+}: {
+  data: GameData;
+  username: string;
+}) {
+  const state = data.state;
+  if (!state) return null;
+  const round = previousPlayableRound(state.current_round);
+  if (!round) return null;
+
+  const results = data.matchingResults.filter(
+    (result) => result.round === round && result.team_username === username,
+  );
+  const sales = data.ticketSales.filter(
+    (sale) => sale.round === round && sale.team_username === username,
+  );
+  const companyIds = Array.from(
+    new Set([
+      ...results.map((result) => result.company_id),
+      ...sales.map((sale) => sale.company_id),
+    ]),
+  );
+
+  return (
+    <section className="surface-panel panel-pad">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">My Results</p>
+          <h2 className="text-2xl font-black">
+            {ROUND_LABELS[round]} 매칭권 입찰 결과
+          </h2>
+        </div>
+      </div>
+      {companyIds.length === 0 ? (
+        <p className="text-sm text-[#667065]">
+          이전 라운드 매칭권 입찰 결과가 없습니다.
+        </p>
+      ) : (
         <div className="overflow-x-auto">
           <table className="table-modern">
             <thead>
               <tr>
                 <th>회사</th>
-                <th className="text-right">내 투자액</th>
-                <th className="text-right">수익률</th>
-                <th className="text-right">정산 후 회수액</th>
+                <th className="text-right">최소 주문 금액</th>
+                <th className="text-right">성공 / 입찰</th>
+                <th className="text-right">판매 환급</th>
               </tr>
             </thead>
             <tbody>
-              {myInvestments.map((i) => {
+              {companyIds.map((companyId) => {
+                const result = results.find((r) => r.company_id === companyId);
+                const sale = sales.find((s) => s.company_id === companyId);
                 const company = data.companies.find(
-                  (c) => c.id === i.company_id,
+                  (c) => c.id === companyId,
                 );
-                const y = yieldByCompany.get(i.company_id) ?? 0;
-                const payoutWon = Math.max(
-                  0,
-                  Math.floor((i.amount * (1 + y / 100)) / MANWON) * MANWON,
-                );
+                const currentMinOrder =
+                  company?.min_order_price ??
+                  result?.min_order_price ??
+                  sale?.min_order_price ??
+                  0;
+                const previousMinOrder =
+                  result?.min_order_price ?? sale?.min_order_price ?? currentMinOrder;
                 return (
-                  <tr key={i.company_id}>
+                  <tr key={companyId}>
                     <td className="font-semibold">
-                      {company?.name ?? i.company_id}
+                      {company?.name ?? companyId}
                     </td>
-                    <td className="text-right font-semibold">
-                      {formatManwon(i.amount)}
+                    <td className="text-right font-semibold tabular-nums">
+                      {formatManwon(previousMinOrder)} →{" "}
+                      {formatManwon(currentMinOrder)}
                     </td>
-                    <td className="text-right font-black text-[#0f766e]">
-                      {y}%
+                    <td
+                      className={
+                        "text-right font-black tabular-nums " +
+                        ((result?.awarded_count ?? 0) > 0
+                          ? "text-[#166534]"
+                          : "text-[#8a9488]")
+                      }
+                    >
+                      {result ? `${result.awarded_count} / ${result.bid_count}` : "-"}
                     </td>
-                    <td className="text-right font-black">
-                      {formatManwon(payoutWon)}
+                    <td className="text-right font-black tabular-nums text-[#166534]">
+                      {sale
+                        ? `${formatManwon(sale.refund_amount)} (${sale.count}개)`
+                        : "-"}
                     </td>
                   </tr>
                 );
@@ -695,5 +847,28 @@ function MyResultsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function ResultMetric({
+  label,
+  value,
+  tone = 0,
+}: {
+  label: string;
+  value: string;
+  tone?: number;
+}) {
+  return (
+    <div className="rounded-lg border border-[#dfe4dc] bg-[#fbfcfa] p-4">
+      <div className="muted-label">{label}</div>
+      <div
+        className={
+          "mt-1 text-xl font-black tabular-nums " + moneyDeltaClass(tone)
+        }
+      >
+        {value}
+      </div>
+    </div>
   );
 }
