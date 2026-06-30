@@ -10,7 +10,7 @@ import type {
   Team,
   Ticket,
 } from "./types";
-import { ROUND_LABELS, latestSettledRound } from "./types";
+import { ROUND_LABELS, compareUsernames, latestSettledRound } from "./types";
 import { formatManwon } from "./format";
 
 export const TEAM_COLORS = [
@@ -156,7 +156,7 @@ export function InvestmentBarChart({ bars }: { bars: InvestmentBar[] }) {
           return (
             <div
               key={bar.label}
-              className="grid gap-2 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(12rem,2fr)_minmax(8.5rem,0.7fr)] sm:items-center"
+              className="grid gap-2 sm:grid-cols-[minmax(6.5rem,0.65fr)_minmax(12rem,2fr)_6rem_7rem] sm:items-center"
             >
               <div className="min-w-0">
                 <div className="truncate text-sm font-black text-[#151713]">
@@ -206,24 +206,24 @@ export function InvestmentBarChart({ bars }: { bars: InvestmentBar[] }) {
                           }
                         />
                       );
-                    })}
+                  })}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-2 sm:justify-end">
+              <div className="flex justify-start sm:justify-center">
                 <span
                   className={
-                    "inline-flex min-w-14 justify-center rounded-md border px-2 py-1 text-sm font-black tabular-nums " +
+                    "inline-flex w-20 justify-center rounded-md border px-2 py-1 text-sm font-black tabular-nums " +
                     yieldBadgeClass(bar.yieldPct)
                   }
                 >
                   {formatYieldPct(bar.yieldPct)}
                 </span>
-                <div className="text-right">
-                  <div className="text-sm font-black tabular-nums">
+              </div>
+              <div className="text-left sm:text-right">
+                <div className="text-sm font-black tabular-nums">
                     {formatManwon(bar.value)}
-                  </div>
-                  <div className="muted-label">총 투자</div>
                 </div>
+                <div className="muted-label">총 투자</div>
               </div>
             </div>
           );
@@ -282,11 +282,13 @@ export function SettledResultsPanel({
   teams,
   investments,
   roundResults,
+  flush = false,
 }: {
   companies: Company[];
   teams: Team[];
   investments: Investment[];
   roundResults: RoundResult[];
+  flush?: boolean;
 }) {
   const settledRound = latestSettledRound(roundResults);
   if (!settledRound) return null;
@@ -306,7 +308,12 @@ export function SettledResultsPanel({
   );
 
   return (
-    <section className="surface-panel panel-pad mb-6">
+    <section
+      className={
+        "surface-panel panel-pad " +
+        (flush ? "" : "mb-6")
+      }
+    >
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="eyebrow">Results</p>
@@ -453,32 +460,39 @@ export function AllTeamsSeedTable({
   teams,
   topN,
   profitByTeam,
+  scroll = false,
 }: {
   teams: Team[];
   /** 상위 N팀만 표시. 생략하면 전체. */
   topN?: number;
   profitByTeam?: Map<string, number>;
+  scroll?: boolean;
 }) {
+  const sectionClassName =
+    "surface-panel panel-pad " +
+    (scroll ? "flex h-full min-h-0 flex-col overflow-hidden" : "mb-6");
+
   if (teams.length === 0) {
     return (
-      <section className="surface-panel panel-pad mb-6">
+      <section className={sectionClassName}>
         <h2 className="text-xl font-black">전체 팀 시드</h2>
         <p className="text-sm text-[#667065]">등록된 팀이 없습니다.</p>
       </section>
     );
   }
   const total = teams.reduce((s, t) => s + t.seed, 0);
-  const sorted = [...teams].sort((a, b) => b.seed - a.seed);
+  const sorted = [...teams].sort(
+    (a, b) => b.seed - a.seed || compareUsernames(a.username, b.username),
+  );
   const displayed = topN !== undefined ? sorted.slice(0, topN) : sorted;
-  const hidden = sorted.length - displayed.length;
   const showProfit = Boolean(profitByTeam);
   const totalProfit = profitByTeam
     ? teams.reduce((sum, team) => sum + (profitByTeam.get(team.username) ?? 0), 0)
     : 0;
 
   return (
-    <section className="surface-panel panel-pad mb-6">
-      <div className="mb-4 flex items-end justify-between gap-3">
+    <section className={sectionClassName}>
+      <div className="mb-4 flex shrink-0 items-end justify-between gap-3">
         <div>
           <p className="eyebrow">Leaderboard</p>
           <h2 className="text-xl font-black">
@@ -502,40 +516,57 @@ export function AllTeamsSeedTable({
           )}
         </div>
       </div>
-      <table className="table-modern">
-        <thead>
-          <tr>
-            <th>순위</th>
-            <th>팀</th>
-            {showProfit && <th className="text-right">수익</th>}
-            <th className="text-right">seed</th>
-          </tr>
-        </thead>
-        <tbody>
-          {displayed.map((t, idx) => (
-            <tr key={t.username}>
-              <td className="font-black tabular-nums">{idx + 1}</td>
-              <td className="font-mono font-semibold">{t.username}</td>
+      <div className={scroll ? "min-h-0 flex-1 overflow-y-auto pr-1" : ""}>
+        <table className="table-modern">
+          <thead>
+            <tr>
+              <th className={scroll ? "sticky top-0 z-10 bg-white" : ""}>
+                순위
+              </th>
+              <th className={scroll ? "sticky top-0 z-10 bg-white" : ""}>
+                팀
+              </th>
               {showProfit && (
-                <td
+                <th
                   className={
-                    "text-right font-black tabular-nums " +
-                    moneyDeltaClass(profitByTeam?.get(t.username) ?? 0)
+                    "text-right " +
+                    (scroll ? "sticky top-0 z-10 bg-white" : "")
                   }
                 >
-                  {formatSignedManwon(profitByTeam?.get(t.username) ?? 0)}
-                </td>
+                  수익
+                </th>
               )}
-              <td className="text-right font-black">{formatManwon(t.seed)}</td>
+              <th
+                className={
+                  "text-right " +
+                  (scroll ? "sticky top-0 z-10 bg-white" : "")
+                }
+              >
+                seed
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {hidden > 0 && (
-        <p className="muted-label mt-3 text-right">
-          ... 그 외 {hidden}팀 (각 팀은 자기 화면에서 본인 순위 확인 가능)
-        </p>
-      )}
+          </thead>
+          <tbody>
+            {displayed.map((t, idx) => (
+              <tr key={t.username}>
+                <td className="font-black tabular-nums">{idx + 1}</td>
+                <td className="font-mono font-semibold">{t.username}</td>
+                {showProfit && (
+                  <td
+                    className={
+                      "text-right font-black tabular-nums " +
+                      moneyDeltaClass(profitByTeam?.get(t.username) ?? 0)
+                    }
+                  >
+                    {formatSignedManwon(profitByTeam?.get(t.username) ?? 0)}
+                  </td>
+                )}
+                <td className="text-right font-black">{formatManwon(t.seed)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

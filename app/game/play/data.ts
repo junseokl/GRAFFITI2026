@@ -14,6 +14,7 @@ import type {
   Ticket,
   TicketSale,
 } from "./types";
+import { compareUsernames } from "./types";
 
 export async function fetchGameData(
   isAdmin: boolean,
@@ -70,9 +71,9 @@ export async function fetchGameData(
     }
   }
 
-  const configuredUsernames = getAllUsernames().filter(
-    (u) => !isAdminUsername(u),
-  );
+  const configuredUsernames = getAllUsernames()
+    .filter((u) => !isAdminUsername(u))
+    .sort(compareUsernames);
 
   // Neon 이 INTEGER/NUMERIC 을 string 으로 줄 수 있는 케이스 방어
   const state = stateRows[0] as
@@ -99,10 +100,12 @@ export async function fetchGameData(
       min_order_price: Number(c.min_order_price),
       sort_order: Number(c.sort_order),
     })),
-    teams: (teamRows as Team[]).map((t) => ({
-      ...t,
-      seed: Number(t.seed),
-    })),
+    teams: (teamRows as Team[])
+      .map((t) => ({
+        ...t,
+        seed: Number(t.seed),
+      }))
+      .sort((a, b) => compareUsernames(a.username, b.username)),
     tickets: (ticketRows as Ticket[]).map((t) => ({
       ...t,
       company_id: Number(t.company_id),

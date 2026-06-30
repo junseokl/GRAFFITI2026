@@ -373,8 +373,8 @@ async function recordMatchingResult(
   `;
 }
 
-// 매칭권 단계 자동 정산: 회사별로 가격 내림차순 정렬 → 상위 topN 팀 확정,
-// 나머지 50% 환불. 동률은 team_username 오름차순으로 안정 정렬.
+// 매칭권 단계 자동 정산: 회사별로 가격 desc → 개수 desc → seed asc → random
+// 순서로 상위 topN 팀 확정, 나머지는 50% 환불.
 export async function autoResolveMatchingPhase(
   round: string,
   topN: number,
@@ -385,10 +385,12 @@ export async function autoResolveMatchingPhase(
   const companies = (await sql`SELECT id FROM companies`) as { id: number }[];
   for (const c of companies) {
     const bids = (await sql`
-      SELECT team_username, price, count FROM bids
-      WHERE company_id = ${c.id}
-      ORDER BY price DESC, team_username ASC
-    `) as { team_username: string; price: number; count: number }[];
+      SELECT b.team_username, b.price, b.count, t.seed
+      FROM bids b
+      JOIN teams t ON t.username = b.team_username
+      WHERE b.company_id = ${c.id}
+      ORDER BY b.price DESC, b.count DESC, t.seed ASC, RANDOM()
+    `) as { team_username: string; price: number; count: number; seed: number }[];
 
     const winnerPrices: number[] = [];
     for (let i = 0; i < bids.length; i++) {

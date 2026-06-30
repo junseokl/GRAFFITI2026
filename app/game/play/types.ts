@@ -101,6 +101,15 @@ export const PHASE_LABELS: Record<Phase, string> = {
   matching: "매칭권 단계",
 };
 
+const USERNAME_COLLATOR = new Intl.Collator("en", {
+  numeric: true,
+  sensitivity: "base",
+});
+
+export function compareUsernames(a: string, b: string): number {
+  return USERNAME_COLLATOR.compare(a, b);
+}
+
 const PLAYABLE_ORDER: Round[] = ["seed", "series-a", "series-b", "series-c"];
 
 export function previousPlayableRound(round: Round): Round | null {

@@ -86,7 +86,7 @@
 
 | 테이블 | 컬럼 | 비고 |
 |---|---|---|
-| `game_state` | id PK(=1), current_round, current_phase, **team_count**, **avg_initial_seed**, **matching_top_n** | 싱글톤. team_count/avg_initial_seed 는 수익률 공식에 사용, matching_top_n 은 매칭권 자동 정산 시 회사별 상위 N 팀만 확정. 모두 admin UI 에서 수정 가능 |
+| `game_state` | id PK(=1), current_round, current_phase, **team_count**, **avg_initial_seed**, **matching_top_n** | 싱글톤. team_count/avg_initial_seed 는 수익률 공식에 사용, matching_top_n 은 매칭권 자동 정산 시 회사별 가격→개수→낮은 seed 순 상위 N 팀만 확정. 모두 admin UI 에서 수정 가능 |
 | `companies` | id SERIAL PK, name UNIQUE, min_order_price, **sort_order**, created_at | sort_order 로 드래그 순서 관리. UI 에선 ID 대신 "순번" (sort_order+1) 표시 |
 | `teams` | username PK, seed (CHECK >= 0) | seed 는 won 단위, 만원 배수 (앱이 강제) |
 | `tickets` | (team, company) PK, count | |
@@ -105,7 +105,7 @@
 
 [lib/game.ts](lib/game.ts) `computeNextState`. admin 의 **"다음 단계로 넘어가기"** 버튼(맨 아래 오른쪽).
 - **stock → results** 전이 시 `settleStockRound` 자동 수익률 정산
-- **matching → next round** 전이 시 `autoResolveMatchingPhase(round, matching_top_n)` 자동 매칭권 정산 (회사별 가격 상위 N 팀 확정, 나머지 50% 환불, 승자 최저가를 다음 최소 주문 금액으로 반영)
+- **matching → next round** 전이 시 `autoResolveMatchingPhase(round, matching_top_n)` 자동 매칭권 정산 (회사별 가격→개수→낮은 seed 순 상위 N 팀 확정, 그래도 같으면 랜덤, 나머지 50% 환불, 승자 최저가를 다음 최소 주문 금액으로 반영)
 
 > 게임 상태 섹션의 라운드/페이즈 직접 변경 박스는 escape hatch — 두 자동 정산 모두 skip.
 
@@ -194,7 +194,7 @@ router.refresh();
 3. 회사 (추가 + 드래그 정렬 + 만원 단위 수정/삭제)
 4. 팀 (seed 만원 입력, 매칭권 개수, 미등록 계정 자동완성)
 5. 주식 단계 매트릭스 (phase=stock 시)
-6. 매칭권 단계 (phase=matching 시): 입찰 매트릭스 + 정산 리스트(상위 N 초록 강조) + 자발 판매 폼. 수동 "확정"/"50% 환불" 버튼은 자동 정산 외 보정용으로 유지
+6. 매칭권 단계 (phase=matching 시): 입찰 매트릭스 + 정산 리스트(상위 N 초록 강조, 경계 동률 랜덤 배지) + 자발 판매 폼. 수동 "확정"/"50% 환불" 버튼은 자동 정산 외 보정용으로 유지
 7. SettledResultsPanel (round_results 있으면 항상, 회사 순서 유지 누적 막대 그래프)
 8. TicketHoldingsTable
 9. AdvanceButton (다음 단계로) — matching 일 때는 자동 정산 노트 표시
@@ -259,6 +259,6 @@ router.refresh();
 
 - **매칭권 효용**: 게임 종료 후 별도 사용 (게임 중 카운트만 의미). 최종 = 팀별 seed + 회사별 매칭권 개수.
 - **80% 자발 판매** 와 **50% 패자 환불** 은 매칭 단계 내 별개 행동.
-- **매칭권 정산**: `advanceToNextPhase` 호출 시 자동으로 회사별 가격 상위 `matching_top_n` 팀이 확정되고 나머지는 50% 환불. 동률은 `team_username` 오름차순 안정 정렬로 끊음. admin 이 수동으로 개별 "확정" / "50% 환불" 도 가능 (보정용).
+- **매칭권 정산**: `advanceToNextPhase` 호출 시 자동으로 회사별 가격→입찰 개수→낮은 seed 순 상위 `matching_top_n` 팀이 확정되고 나머지는 50% 환불. 가격/개수/seed 가 모두 같아 상위 N 경계가 갈리지 않으면 랜덤으로 끊음. admin 정산 미리보기는 상위 N 에만 "확정", 나머지에만 "50% 환불"을 표시하고 경계 랜덤 후보에 `랜덤` 배지를 붙임.
 - **seed 음수 불가**: DB CHECK 제약. 정산 페이아웃 `GREATEST(0, ...)` 클램프.
 - **모든 금액은 만원 단위**: 정산·환불 시 만원 단위 내림. 천원 이하는 모두 버림.

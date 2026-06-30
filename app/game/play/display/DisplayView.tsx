@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import type { GameData, Team } from "../types";
 import { ROUND_LABELS, PHASE_LABELS, previousPlayableRound } from "../types";
@@ -16,11 +16,42 @@ import {
 // admin 컨트롤 UI 는 없음. 폴링으로 자동 갱신.
 export function DisplayView({ data }: { data: GameData }) {
   const router = useRouter();
+  const resultsPanelRef = useRef<HTMLDivElement | null>(null);
+  const [resultsPanelHeight, setResultsPanelHeight] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     const id = setInterval(() => router.refresh(), 3000);
     return () => clearInterval(id);
   }, [router]);
+
+  useEffect(() => {
+    const element = resultsPanelRef.current;
+    if (!element) return;
+
+    const updateHeight = () => {
+      const nextHeight = Math.ceil(element.getBoundingClientRect().height);
+      if (nextHeight <= 0) {
+        setResultsPanelHeight(null);
+        return;
+      }
+      setResultsPanelHeight((previousHeight) =>
+        previousHeight !== null && Math.abs(previousHeight - nextHeight) < 1
+          ? previousHeight
+          : nextHeight,
+      );
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    window.addEventListener("resize", updateHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, []);
 
   const state = data.state;
   const displayTeams = getDisplaySeedTeams(data);
@@ -63,18 +94,32 @@ export function DisplayView({ data }: { data: GameData }) {
         </div>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <AllTeamsSeedTable
-          teams={displayTeams}
-          topN={5}
-          profitByTeam={seedProfitByTeam}
-        />
-        <SettledResultsPanel
-          companies={data.companies}
-          teams={data.teams}
-          investments={data.investments}
-          roundResults={data.roundResults}
-        />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+        <div
+          className="min-h-0 xl:h-[var(--results-panel-height)]"
+          style={
+            resultsPanelHeight
+              ? ({
+                  "--results-panel-height": `${resultsPanelHeight}px`,
+                } as CSSProperties)
+              : undefined
+          }
+        >
+          <AllTeamsSeedTable
+            teams={displayTeams}
+            profitByTeam={seedProfitByTeam}
+            scroll
+          />
+        </div>
+        <div ref={resultsPanelRef}>
+          <SettledResultsPanel
+            companies={data.companies}
+            teams={data.teams}
+            investments={data.investments}
+            roundResults={data.roundResults}
+            flush
+          />
+        </div>
       </div>
 
       {/* 매칭권 보유 현황은 평소엔 자주 안 보지만, 필요할 때 큰 화면에서 한눈에 보려고 맨 아래 가로 풀폭으로 둠. */}
