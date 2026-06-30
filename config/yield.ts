@@ -12,8 +12,9 @@
 //
 // 의도:
 //   - σ_up 은 M 클수록 줄어들어서 "적은 M 일수록 고점이 높음"
-//   - σ_down 은 M 클수록 늘어나서 "평균 상승(+μ_max 로 수렴)을 상쇄" → 저점이 거의 일정
-//   - σ_up_bonus > σ_down_growth 라서 고점 변화량이 저점 변화량보다 큼 (적은 M = 큰 한방)
+//   - σ_down 은 M 클수록 늘어나서 "평균 상승(+μ_max 로 수렴)을 상쇄"
+//   - σ_up_bonus / σ_down_growth 를 7 안팎으로 맞춰 |2·u_max − σ_up_bonus| ≈ |2·u_max − σ_down_growth|
+//     → 저점 변화량과 고점 변화량이 거의 같아짐 (M 변화에 따른 비대칭 완화)
 //
 // 변수 의미:
 //   M                 : 해당 회사에 모든 팀이 투자한 시드머니 총합
@@ -29,8 +30,8 @@
 export const YIELD_CONFIG = {
   u_max: 5,
   sigma_up_base: 10,
-  sigma_up_bonus: 20,
+  sigma_up_bonus: 17,
   sigma_down_base: 15,
-  sigma_down_growth: 5,
+  sigma_down_growth: 3,
   k_scale: 10,
 } as const;
