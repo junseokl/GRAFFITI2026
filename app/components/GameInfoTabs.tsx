@@ -7,7 +7,7 @@ type Stage = {
   id: string;
   title: string;
   summary: string;
-  detail: string;
+  detail?: string;
 };
 
 const STAGES: Stage[] = [
@@ -67,30 +67,6 @@ const STAGES: Stage[] = [
     id: "hint",
     title: "힌트",
     summary: "수익률 공식 & 전략",
-    detail: "",
-    detail:
-      "각 회사의 수익률 R 은 다음 공식으로 결정됩니다.\n\n" +
-      "  R(M, Z) = mean(M) + σ(M, Z) · Z\n\n" +
-      "여기서\n" +
-      "  M : 그 회사에 모든 팀이 투자한 총 시드머니\n" +
-      "  Z : 정규분포를 따르며 [-1, +1] 사이의 무작위 값\n\n" +
-      "평균과 변동성은 M 에 따라 달라집니다 — 평균은 M 이 클수록 +μ_max 에 가까워지고, 작을수록 −μ_max 에 가까워집니다. " +
-      "변동성은 Z 의 부호에 따라 두 가지로 나뉘는데, 수익 방향(Z≥0) 의 σ_up 은 M 이 작을수록 커지고, " +
-      "손실 방향(Z<0) 의 σ_down 은 M 이 클수록 커지면서 평균 상승을 일부 상쇄합니다.\n\n" +
-      "즉,\n" +
-      "  • 많은 팀이 모이는 회사 → 평균 수익률 ↑, 수익 쪽 변동성 ↓ (안정적인 작은 수익)\n" +
-      "  • 적은 팀만 모이는 회사 → 평균 수익률 ↓, 수익 쪽 변동성 ↑ (대박 가능, 단 큰 손실 위험도 있음)\n\n" +
-      "20팀 · 평균 시드 1000만원 (총 풀 2억원) 기준 대략적인 분포:\n" +
-      "  M = 풀의 1%  (200만원)  : 평균 −1.8%, 저점 −19%, 고점 +21%\n" +
-      "  M = 풀의 10% (2000만원) : 평균 +0.5%, 저점 −17%, 고점 +19%\n" +
-      "  M = 풀의 30% (6000만원) : 평균 +1.8%, 저점 −15%, 고점 +17%\n" +
-      "  M = 풀의 100% (몰빵)    : 평균 +2.7%, 저점 −14%, 고점 +16%\n\n" +
-      "인기 종목은 무난한 수익을, 비인기 종목은 큰 한방을 노릴 수 있는 구조입니다. " +
-      "다른 팀들이 어디에 몰릴지 예측해서 균형을 잡거나, 역으로 비인기 종목에 베팅해보세요.",
-    formula:
-      "  mean(M)   = μ_max − 2·μ_max / (1 + k·M)\n" +
-      "  σ_up(M)   = σ_up_base + σ_up_bonus / (1 + k·M)         (Z ≥ 0)\n" +
-      "  σ_down(M) = σ_down_base + σ_down_growth · k·M / (1+k·M) (Z < 0)",
   },
 ];
 
@@ -129,7 +105,7 @@ export function GameInfoTabs() {
           <HintContent />
         ) : (
           <div className="whitespace-pre-wrap text-lg leading-9 text-[#20261f]">
-            {selected.detail}
+            {selected.detail ?? ""}
           </div>
         )}
       </article>
@@ -148,7 +124,7 @@ function HintContent() {
         수익률 <InlineMath latex="R" /> 은 다음 공식으로 결정돼요.
       </p>
 
-      <DisplayMath latex="R(M, Z) = \operatorname{mean}(M) + \sigma(M, Z) \cdot Z" />
+      <DisplayMath latex={String.raw`R(M, Z) = \operatorname{mean}(M) + \sigma(M, Z) \cdot Z`} />
 
       <div className="mt-6">
         <p className="font-semibold">여기서</p>
@@ -163,13 +139,13 @@ function HintContent() {
 
       <p className="mt-6">
         평균과 변동성은 <InlineMath latex="M" /> 에 따라 달라집니다 — 평균은{" "}
-        <InlineMath latex="M" /> 이 클수록 <InlineMath latex="+\mu_{\max}" /> 에
-        가까워지고, 작을수록 <InlineMath latex="-\mu_{\max}" /> 에 가까워집니다.
+        <InlineMath latex="M" /> 이 클수록 <InlineMath latex={String.raw`+\mu_{\max}`} /> 에
+        가까워지고, 작을수록 <InlineMath latex={String.raw`-\mu_{\max}`} /> 에 가까워집니다.
         변동성은 <InlineMath latex="Z" /> 의 부호에 따라 두 가지로 나뉘는데, 수익
-        방향(<InlineMath latex="Z \ge 0" />) 의{" "}
-        <InlineMath latex="\sigma_{\mathrm{up}}" /> 은 <InlineMath latex="M" /> 이
-        작을수록 커지고, 손실 방향(<InlineMath latex="Z < 0" />) 의{" "}
-        <InlineMath latex="\sigma_{\mathrm{down}}" /> 은 <InlineMath latex="M" /> 이
+        방향(<InlineMath latex={String.raw`Z \ge 0`} />) 의{" "}
+        <InlineMath latex={String.raw`\sigma_{\mathrm{up}}`} /> 은 <InlineMath latex="M" /> 이
+        작을수록 커지고, 손실 방향(<InlineMath latex={String.raw`Z < 0`} />) 의{" "}
+        <InlineMath latex={String.raw`\sigma_{\mathrm{down}}`} /> 은 <InlineMath latex="M" /> 이
         클수록 커지면서 평균 상승을 일부 상쇄합니다.
       </p>
 
@@ -180,15 +156,17 @@ function HintContent() {
       </div>
 
       <p className="mt-6">
-        인기 종목은 무난한 수익을, 비인기 종목은 큰 한 방을 노릴 수 있는 구조입니다.
+        인기 종목은 무난한 수익을, 비인기 종목은 큰 한 방을 노릴 수 있는 구조예요.
         다른 팀들이 어디에 몰릴지 예측해 균형을 잡거나, 역으로 비인기 종목에
-        과감히 베팅해 보세요.
+        과감히 베팅해보세요. 스타트업의 이야기에서 얻은 확신과, 다른 팀들의
+        심리를 읽는 눈 — 이 둘을 함께 굴리는 것이 GRAFFITI 투자 게임의 진짜
+        묘미입니다. 🎨
       </p>
 
       <div className="mt-6 grid gap-3">
-        <DisplayMath latex="\operatorname{mean}(M) = \mu_{\max} - \frac{2\mu_{\max}}{1 + kM}" />
-        <DisplayMath latex="\sigma_{\mathrm{up}}(M) = \sigma_{\mathrm{up\_base}} + \frac{\sigma_{\mathrm{up\_bonus}}}{1 + kM} \quad (Z \ge 0)" />
-        <DisplayMath latex="\sigma_{\mathrm{down}}(M) = \sigma_{\mathrm{down\_base}} + \sigma_{\mathrm{down\_growth}} \cdot \frac{kM}{1 + kM} \quad (Z < 0)" />
+        <DisplayMath latex={String.raw`\operatorname{mean}(M) = \mu_{\max} - \frac{2\mu_{\max}}{1 + kM}`} />
+        <DisplayMath latex={String.raw`\sigma_{\mathrm{up}}(M) = \sigma_{\mathrm{up\_base}} + \frac{\sigma_{\mathrm{up\_bonus}}}{1 + kM} \quad (Z \ge 0)`} />
+        <DisplayMath latex={String.raw`\sigma_{\mathrm{down}}(M) = \sigma_{\mathrm{down\_base}} + \sigma_{\mathrm{down\_growth}} \cdot \frac{kM}{1 + kM} \quad (Z < 0)`} />
       </div>
     </div>
   );
