@@ -8,9 +8,11 @@ import type {
   GameData,
   GameState,
   Investment,
+  MatchingResult,
   RoundResult,
   Team,
   Ticket,
+  TicketSale,
 } from "./types";
 
 export async function fetchGameData(
@@ -37,6 +39,36 @@ export async function fetchGameData(
   const bidRows = isAdmin
     ? await sql`SELECT team_username, company_id, price, count FROM bids`
     : await sql`SELECT team_username, company_id, price, count FROM bids WHERE team_username = ${username}`;
+
+  let matchingResultRows: MatchingResult[] = [];
+  try {
+    matchingResultRows = (await sql`
+      SELECT round, team_username, company_id, bid_price, bid_count, awarded_count, min_order_price
+      FROM matching_results
+    `) as MatchingResult[];
+  } catch (e) {
+    if (!(e instanceof Error) || !e.message.includes("matching_results")) {
+      throw e;
+    }
+  }
+
+  let ticketSaleRows: TicketSale[] = [];
+  try {
+    ticketSaleRows = isAdmin
+      ? ((await sql`
+          SELECT round, team_username, company_id, count, refund_amount, min_order_price
+          FROM ticket_sales
+        `) as TicketSale[])
+      : ((await sql`
+          SELECT round, team_username, company_id, count, refund_amount, min_order_price
+          FROM ticket_sales
+          WHERE team_username = ${username}
+        `) as TicketSale[]);
+  } catch (e) {
+    if (!(e instanceof Error) || !e.message.includes("ticket_sales")) {
+      throw e;
+    }
+  }
 
   const configuredUsernames = getAllUsernames().filter(
     (u) => !isAdminUsername(u),
@@ -91,6 +123,21 @@ export async function fetchGameData(
       company_id: Number(b.company_id),
       price: Number(b.price),
       count: Number(b.count),
+    })),
+    matchingResults: matchingResultRows.map((r) => ({
+      ...r,
+      company_id: Number(r.company_id),
+      bid_price: Number(r.bid_price),
+      bid_count: Number(r.bid_count),
+      awarded_count: Number(r.awarded_count),
+      min_order_price: Number(r.min_order_price),
+    })),
+    ticketSales: ticketSaleRows.map((s) => ({
+      ...s,
+      company_id: Number(s.company_id),
+      count: Number(s.count),
+      refund_amount: Number(s.refund_amount),
+      min_order_price: Number(s.min_order_price),
     })),
     configuredUsernames,
   };
