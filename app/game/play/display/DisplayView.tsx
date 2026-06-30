@@ -50,20 +50,20 @@ export function DisplayView({ data }: { data: GameData }) {
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-        <div>
-          <AllTeamsSeedTable teams={data.teams} />
-          <TicketHoldingsTable
-            companies={data.companies}
-            teams={data.teams}
-            tickets={data.tickets}
-          />
-        </div>
+        <AllTeamsSeedTable teams={data.teams} topN={5} />
         <SettledResultsPanel
           companies={data.companies}
           investments={data.investments}
           roundResults={data.roundResults}
         />
       </div>
+
+      {/* 매칭권 보유 현황은 평소엔 자주 안 보지만, 필요할 때 큰 화면에서 한눈에 보려고 맨 아래 가로 풀폭으로 둠. */}
+      <TicketHoldingsTable
+        companies={data.companies}
+        teams={data.teams}
+        tickets={data.tickets}
+      />
     </main>
   );
 }

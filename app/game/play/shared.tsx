@@ -303,7 +303,14 @@ export function TicketHoldingsTable({
 
 // ===== 전체 팀 시드 요약 (display 페이지용) =====
 
-export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
+export function AllTeamsSeedTable({
+  teams,
+  topN,
+}: {
+  teams: Team[];
+  /** 상위 N팀만 표시. 생략하면 전체. */
+  topN?: number;
+}) {
   if (teams.length === 0) {
     return (
       <section className="surface-panel panel-pad mb-6">
@@ -314,16 +321,20 @@ export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
   }
   const total = teams.reduce((s, t) => s + t.seed, 0);
   const sorted = [...teams].sort((a, b) => b.seed - a.seed);
+  const displayed = topN !== undefined ? sorted.slice(0, topN) : sorted;
+  const hidden = sorted.length - displayed.length;
 
   return (
     <section className="surface-panel panel-pad mb-6">
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
           <p className="eyebrow">Leaderboard</p>
-          <h2 className="text-xl font-black">전체 팀 시드</h2>
+          <h2 className="text-xl font-black">
+            {topN !== undefined ? `상위 ${displayed.length}팀 시드` : "전체 팀 시드"}
+          </h2>
         </div>
         <div className="text-right">
-          <div className="muted-label">합계</div>
+          <div className="muted-label">합계 (전체 {sorted.length}팀)</div>
           <div className="text-lg font-black">{formatManwon(total)}</div>
         </div>
       </div>
@@ -336,7 +347,7 @@ export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((t, idx) => (
+          {displayed.map((t, idx) => (
             <tr key={t.username}>
               <td className="font-black tabular-nums">{idx + 1}</td>
               <td className="font-mono font-semibold">{t.username}</td>
@@ -345,6 +356,11 @@ export function AllTeamsSeedTable({ teams }: { teams: Team[] }) {
           ))}
         </tbody>
       </table>
+      {hidden > 0 && (
+        <p className="muted-label mt-3 text-right">
+          ... 그 외 {hidden}팀 (각 팀은 자기 화면에서 본인 순위 확인 가능)
+        </p>
+      )}
     </section>
   );
 }
