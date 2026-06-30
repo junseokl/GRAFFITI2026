@@ -333,15 +333,36 @@ export async function autoResolveMatchingPhase(topN: number): Promise<void> {
       ORDER BY price DESC, team_username ASC
     `) as { team_username: string; price: number; count: number }[];
 
+    const winnerPrices: number[] = [];
     for (let i = 0; i < bids.length; i++) {
       const b = bids[i];
       if (i < topN) {
+        winnerPrices.push(Number(b.price));
         await opAwardBid(b.team_username, c.id);
       } else {
         await opRefundFailedBid(b.team_username, c.id);
       }
     }
+
+    // 승자가 있으면 다음 라운드의 min_order_price 를 승자 중 최저가로 갱신.
+    if (winnerPrices.length > 0) {
+      const newMinPrice = Math.min(...winnerPrices);
+      await sql`UPDATE companies SET min_order_price = ${newMinPrice} WHERE id = ${c.id}`;
+    }
   }
+}
+
+// 게임 전체 초기화: bids / round_results / investments / tickets 삭제,
+// 모든 팀의 seed 를 game_state.avg_initial_seed 로 재설정, 라운드/페이즈 → (seed, idle).
+// 회사·팀·게임 설정(team_count, avg_initial_seed, matching_top_n) 은 유지.
+export async function opResetGame(): Promise<void> {
+  const { avg_initial_seed } = await readGameState();
+  await sql`DELETE FROM bids`;
+  await sql`DELETE FROM round_results`;
+  await sql`DELETE FROM investments`;
+  await sql`DELETE FROM tickets`;
+  await sql`UPDATE teams SET seed = ${avg_initial_seed}`;
+  await sql`UPDATE game_state SET current_round = 'seed', current_phase = 'idle' WHERE id = 1`;
 }
 
 // 매칭권 자발적 판매: 현재 최소 주문 금액 × 개수 의 80% 환불 (만원 내림)

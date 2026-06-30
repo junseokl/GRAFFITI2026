@@ -4,6 +4,14 @@
 # 계정 비번 메모 (평문, 커밋 금지)
 /accounts.md
 
+# 게임 문서/이미지 (원본 자료 — 레포에 넣지 않음)
+*.hwp
+*.hwpx
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
 # dependencies
 /node_modules
 /.pnp

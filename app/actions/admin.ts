@@ -15,6 +15,7 @@ import {
   opAwardBid,
   opRefundFailedBid,
   autoResolveMatchingPhase,
+  opResetGame,
 } from "@/lib/game";
 
 const ROUNDS = ["seed", "series-a", "series-b", "series-c", "ended"] as const;
@@ -80,6 +81,16 @@ export async function setGameState(
       throw new Error("잘못된 phase 값");
     }
     await sql`UPDATE game_state SET current_round = ${round}, current_phase = ${phase} WHERE id = 1`;
+    refresh();
+  });
+}
+
+// 게임 전체 초기화 — 모든 투자/입찰/매칭권/정산 결과 삭제,
+// 팀 seed 를 avg_initial_seed 로 재설정, 라운드/페이즈 → (seed, idle).
+// 회사·팀·게임 설정은 유지.
+export async function resetGame(): Promise<ActionResult> {
+  return guard(async () => {
+    await opResetGame();
     refresh();
   });
 }

@@ -261,6 +261,10 @@ export function TicketHoldingsTable({
         <div>
           <p className="eyebrow">Tickets</p>
           <h2 className="text-xl font-black">매칭권 보유 현황</h2>
+          <p className="muted-label mt-1">
+            회사명 아래의 가격은 <strong>다음 라운드 매칭권 최소 주문 금액</strong>
+            (직전 매칭권 단계의 승자 중 최저가). 정산 전까지는 admin 이 설정한 초기값.
+          </p>
         </div>
         <span className="phase-pill">개수</span>
       </div>
@@ -271,7 +275,10 @@ export function TicketHoldingsTable({
               <th>팀</th>
               {companies.map((c) => (
                 <th key={c.id} className="text-right">
-                  {c.name}
+                  <div>{c.name}</div>
+                  <div className="muted-label mt-0.5 font-normal">
+                    {formatManwon(c.min_order_price)}
+                  </div>
                 </th>
               ))}
             </tr>
