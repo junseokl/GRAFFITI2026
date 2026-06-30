@@ -362,6 +362,8 @@ export async function opResetGame(): Promise<void> {
   await sql`DELETE FROM investments`;
   await sql`DELETE FROM tickets`;
   await sql`UPDATE teams SET seed = ${avg_initial_seed}`;
+  // 매칭권 자동정산이 덮어쓴 min_order_price 를 admin 이 마지막에 설정한 초기값으로 복구.
+  await sql`UPDATE companies SET min_order_price = initial_min_order_price`;
   await sql`UPDATE game_state SET current_round = 'seed', current_phase = 'idle' WHERE id = 1`;
 }
 

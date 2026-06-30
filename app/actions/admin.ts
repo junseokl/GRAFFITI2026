@@ -155,8 +155,8 @@ export async function addCompany(
     `) as { m: number | string }[];
     const nextOrder = Number(maxRows[0]?.m ?? -1) + 1;
     await sql`
-      INSERT INTO companies (name, min_order_price, sort_order)
-      VALUES (${n}, ${p}, ${nextOrder})
+      INSERT INTO companies (name, min_order_price, initial_min_order_price, sort_order)
+      VALUES (${n}, ${p}, ${p}, ${nextOrder})
     `;
     refresh();
   });
@@ -171,7 +171,9 @@ export async function updateCompany(
     const i = assertInt(id, "id");
     const n = assertString(name, "name");
     const p = assertInt(minOrderPrice, "minOrderPrice", { min: 0 });
-    await sql`UPDATE companies SET name = ${n}, min_order_price = ${p} WHERE id = ${i}`;
+    // admin 이 직접 수정한 값은 자동정산 기준이 아니라 새로운 "초기값" 으로 간주.
+    // → initial_min_order_price 도 같이 업데이트 → 다음 게임 초기화 때 이 값으로 복구.
+    await sql`UPDATE companies SET name = ${n}, min_order_price = ${p}, initial_min_order_price = ${p} WHERE id = ${i}`;
     refresh();
   });
 }
