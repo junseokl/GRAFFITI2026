@@ -161,7 +161,6 @@ export function AdminDashboard({ data }: { data: GameData }) {
 
       <SettledResultsPanel
         companies={data.companies}
-        teams={data.teams}
         investments={data.investments}
         roundResults={data.roundResults}
       />

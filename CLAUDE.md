@@ -13,7 +13,7 @@
 - **Neon Postgres** (`@neondatabase/serverless` HTTP fetch 모드)
 - **JWT 세션** (`jose`, HS256), **bcryptjs** 비밀번호 해시
 - **Vercel** 배포 (git push → 자동 재배포)
-- 외부 의존성 최소: 차트도 직접 그린 HTML/CSS (라이브러리 없음), drag-and-drop 도 HTML5 native
+- 외부 의존성 최소: pie chart 도 직접 그린 SVG (라이브러리 없음), drag-and-drop 도 HTML5 native
 
 ## 화폐 단위 규약 ★ 중요
 
@@ -51,7 +51,7 @@
 │   │       ├── format.ts        ← 만원 단위 변환·포맷 헬퍼
 │   │       ├── AdminDashboard.tsx ← admin 컨트롤 패널 (700+줄)
 │   │       ├── PlayerView.tsx   ← 플레이어 화면
-│   │       ├── shared.tsx       ← InvestmentBarChart, SettledResultsPanel, TicketHoldingsTable, AllTeamsSeedTable
+│   │       ├── shared.tsx       ← PieChart, SettledResultsPanel, TicketHoldingsTable, AllTeamsSeedTable
 │   │       └── display/
 │   │           ├── page.tsx     ← 큰 화면용 디스플레이 라우트 (admin 전용)
 │   │           └── DisplayView.tsx ← 읽기 전용 디스플레이 UI
@@ -93,8 +93,6 @@
 | `investments` | (round, team, company) PK, amount | 정산 후에도 보존 (history) |
 | `round_results` | (round, company) PK, yield_pct | 정산 결과 |
 | `bids` | (team, company) PK, price, count | 한 팀 한 회사 = 한 가격. 정산·취소 시 삭제 |
-| `matching_results` | (round, team, company) PK, bid_price, bid_count, awarded_count, min_order_price | 매칭권 정산 이력. 대기 단계에서 이전 라운드 성공 개수와 최소 주문 금액 변동 표시 |
-| `ticket_sales` | (round, team, company) PK, count, refund_amount, min_order_price | 매칭권 자발 판매 이력. 대기 단계 My Results 에 환급 금액 표시 |
 
 ## 게임 상태 머신
 
@@ -121,9 +119,10 @@ mean(M)   = μ_max − 2·μ_max / (1 + k·M)
 k = k_scale / (team_count × avg_initial_seed)    ← DB game_state 에서 읽음
 ```
 
-- 파라미터: [config/yield.ts](config/yield.ts) (`u_max=5, σ_up_base=10, σ_up_bonus=20, σ_down_base=15, σ_down_growth=5, k_scale=10`)
+- 파라미터: [config/yield.ts](config/yield.ts) (`u_max=5, σ_up_base=10, σ_up_bonus=17, σ_down_base=15, σ_down_growth=3, k_scale=10`)
 - team_count, avg_initial_seed 는 DB 에서 읽음 (admin UI 게임 설정 섹션에서 수정 가능). ★ 테스트 때 작은 값으로 바꿔야 공식이 의도대로 동작 (예: test 계정 2개로 1000만원 seed 면 team_count=2, avg_initial_seed=10000000).
-- σ_up_bonus > σ_down_growth 라서 고점 변화 폭이 저점 변화 폭보다 큼.
+- `|2·u_max − σ_up_bonus|` = `|2·u_max − σ_down_growth|` = 7 → M 변화에 따른 저점·고점 변화량이 ≈ 균형 (각 ~5.7%). σ_up_bonus 를 σ_down_growth 보다 크게 두는 건 같지만, 그 차이가 너무 크면 고점 변동만 가팔라져 밸런스 깨짐.
+- 20팀·평균 1000만원 기준 분포 (M=풀의 %): 1% → 평균 −1.8% / 저점 −19% / 고점 +21%. 10% → +0.5% / −17% / +19%. 100% → +2.7% / −14% / +16%.
 - 구현: [lib/game.ts](lib/game.ts) `computeYieldPct(M, teamCount, avgInitialSeed)`. `settleStockRound` 가 game_state 에서 두 값을 읽고 회사별 SUM 후 호출 → 만원 단위 내림 적용.
 
 ## 인증·권한
@@ -183,7 +182,7 @@ router.refresh();
 | `/game/play` | 비로그인 | "로그인 하시오" 페이지 |
 | `/game/play` | 플레이어 | [PlayerView](app/game/play/PlayerView.tsx) — 본인 seed/투자/입찰/판매/결과 |
 | `/game/play` | admin | [AdminDashboard](app/game/play/AdminDashboard.tsx) — 전체 컨트롤 |
-| `/game/play/display` | admin | [DisplayView](app/game/play/display/DisplayView.tsx) — 큰 화면용 읽기 전용 (축약 헤더, 단계별 전체 팀 시드와 정산 결과 2열, 전체 폭 매칭권 보유 매트릭스) |
+| `/game/play/display` | admin | [DisplayView](app/game/play/display/DisplayView.tsx) — 큰 화면용 읽기 전용 (게임 상태 헤더, 전체 팀 시드, 정산 결과 pie chart, 매칭권 보유 매트릭스) |
 
 `/game/play/display` 는 admin 대시보드 우측 상단의 "큰 화면용 디스플레이 열기 ↗" 링크로 새 탭에서 열기 가능. 게임 진행 중 큰 모니터에는 display 만 띄우고, 별도 노트북에서 admin 대시보드로 조작.
 
@@ -203,13 +202,11 @@ router.refresh();
 2. 주식 단계: 투자하기 (회사별 만원 입력, 보유/투자 합계 표시)
 3. 매칭권 단계: 매칭권 구매 (만원 가격, 라이브 "이 회사에 쓸 금액", 최소가 미만 시 "금액이 낮습니다" + 버튼 비활성)
 4. 매칭권 단계: 매칭권 판매 (80% 환불 만원 단위 내림, 미리보기)
-5. 내 결과 패널 (results 에서는 총 수익/회수/투자 + 회사별 투자 수익, idle 에서는 이전 라운드 매칭권 입찰 결과)
-6. SettledResultsPanel (회사 순서 유지, 21팀 고대비 고정 색상, 회사별 투자 금액 + 팀별 색상 누적 막대 그래프, 수익률 +/- 색상 배지)
-7. TicketHoldingsTable (idle 에서는 모든 팀의 이전 라운드 매칭권 성공 개수를 `5 (+2)` 형태로 표시하고, 헤더에 최소 주문 금액 변동 표시)
+5. 내 결과 패널 (회사별 내 투자/수익률/회수액)
+6. SettledResultsPanel (모든 팀 pie chart)
+7. TicketHoldingsTable
 
 **폴링**: 양쪽 다 3초마다 `router.refresh()`. 폼 입력값은 로컬 state 라 안 덮어쓰임.
-
-**Display 시드 표시 기준**: `/game/play/display` 의 전체 팀 시드와 총 seed 는 항상 표시하되, `stock` 중에는 현재 라운드 투자액을 되더해 주식 단계 시작 기준 seed 를 보여주고, `matching` 중에는 현재 입찰 금액을 되더해 매칭권 단계 시작 기준 seed 를 보여줌. 투자·입찰로 실시간 차감되는 금액은 관객 화면에 드러나지 않음.
 
 **보안**: 플레이어 화면엔 자기 입찰만 fetch ([app/game/play/data.ts](app/game/play/data.ts) `WHERE team_username = ${username}`).
 
@@ -234,7 +231,7 @@ router.refresh();
 - **dotenv `$` 확장 문제**: bcrypt 해시의 `$` 가 dotenv-expand 와 충돌 → JSON 을 base64 로 감싸 `AUTH_USERS_B64` 로 보관.
 - **`@vercel/postgres` deprecated**: `@neondatabase/serverless` 사용. HTTP fetch 모드라 단일 쿼리만, 다중 statement 는 `sql.query()`.
 - **Neon 의 INT/NUMERIC string 반환**: [data.ts](app/game/play/data.ts) 가 모든 숫자 필드를 `Number()` 로 정규화. lib/game.ts 도 `Number(M)` 으로 방어.
-- **`investments.round` PK 컬럼**: 정산 후에도 안 지움. 회사별 투자 금액 + 팀별 색상 누적 막대 그래프와 결과 패널이 이 history 를 읽음.
+- **`investments.round` PK 컬럼**: 정산 후에도 안 지움. 분포 pie chart 와 결과 패널이 이 history 를 읽음.
 - **정산 idempotency**: `settleStockRound` 는 `round_results` 가 이미 있으면 no-op. 재진입 안전.
 - **manual setGameState 는 정산 skip**: 정상 흐름은 항상 advanceToNextPhase 사용.
 - **bid 의 seed 차감**: 입찰 시 `price × count` 즉시 차감. clearBid 는 전액 환불, awardBid 는 환불 없음 (매칭권 전환), refundFailedBid 는 50% 환불 (만원 내림).

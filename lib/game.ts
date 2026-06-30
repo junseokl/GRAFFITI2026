@@ -282,16 +282,14 @@ export async function opClearBid(
 
 // 입찰 승자 처리: 입찰 count 만큼 tickets 추가, 환불 없음 (이미 차감됨).
 export async function opAwardBid(
-  round: string,
   username: string,
   companyId: number,
 ): Promise<void> {
   const bidRows = (await sql`
-    SELECT price, count FROM bids
+    SELECT count FROM bids
     WHERE team_username = ${username} AND company_id = ${companyId}
-  `) as { price: number; count: number }[];
+  `) as { count: number }[];
   if (!bidRows[0]) throw new Error("해당 입찰을 찾을 수 없습니다");
-  const price = Number(bidRows[0].price);
   const cnt = Number(bidRows[0].count);
 
   await sql`INSERT INTO teams (username, seed) VALUES (${username}, 0) ON CONFLICT (username) DO NOTHING`;
@@ -301,13 +299,11 @@ export async function opAwardBid(
     ON CONFLICT (team_username, company_id)
     DO UPDATE SET count = tickets.count + EXCLUDED.count
   `;
-  await recordMatchingResult(round, username, companyId, price, cnt, cnt);
   await sql`DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}`;
 }
 
 // 패자 처리: 가격×개수 의 50% 환불 (만원 내림), 입찰 삭제.
 export async function opRefundFailedBid(
-  round: string,
   username: string,
   companyId: number,
 ): Promise<void> {
@@ -320,65 +316,12 @@ export async function opRefundFailedBid(
   const total = Number(bidRows[0].price) * Number(bidRows[0].count);
   const refundAmt = Math.floor((total * 0.5) / 10000) * 10000;
   await sql`UPDATE teams SET seed = seed + ${refundAmt} WHERE username = ${username}`;
-  await recordMatchingResult(
-    round,
-    username,
-    companyId,
-    Number(bidRows[0].price),
-    Number(bidRows[0].count),
-    0,
-  );
   await sql`DELETE FROM bids WHERE team_username = ${username} AND company_id = ${companyId}`;
-}
-
-async function recordMatchingResult(
-  round: string,
-  username: string,
-  companyId: number,
-  bidPrice: number,
-  bidCount: number,
-  awardedCount: number,
-): Promise<void> {
-  const companyRows = (await sql`
-    SELECT min_order_price FROM companies WHERE id = ${companyId}
-  `) as { min_order_price: number }[];
-  const minOrderPrice = Number(companyRows[0]?.min_order_price ?? 0);
-
-  await sql`
-    INSERT INTO matching_results (
-      round,
-      team_username,
-      company_id,
-      bid_price,
-      bid_count,
-      awarded_count,
-      min_order_price
-    )
-    VALUES (
-      ${round},
-      ${username},
-      ${companyId},
-      ${bidPrice},
-      ${bidCount},
-      ${awardedCount},
-      ${minOrderPrice}
-    )
-    ON CONFLICT (round, team_username, company_id)
-    DO UPDATE SET
-      bid_price = EXCLUDED.bid_price,
-      bid_count = EXCLUDED.bid_count,
-      awarded_count = EXCLUDED.awarded_count,
-      min_order_price = EXCLUDED.min_order_price,
-      resolved_at = NOW()
-  `;
 }
 
 // 매칭권 단계 자동 정산: 회사별로 가격 내림차순 정렬 → 상위 topN 팀 확정,
 // 나머지 50% 환불. 동률은 team_username 오름차순으로 안정 정렬.
-export async function autoResolveMatchingPhase(
-  round: string,
-  topN: number,
-): Promise<void> {
+export async function autoResolveMatchingPhase(topN: number): Promise<void> {
   if (!Number.isInteger(topN) || topN < 0) {
     throw new Error("매칭권 상위 N 값은 0 이상의 정수여야 합니다");
   }
@@ -393,9 +336,9 @@ export async function autoResolveMatchingPhase(
     for (let i = 0; i < bids.length; i++) {
       const b = bids[i];
       if (i < topN) {
-        await opAwardBid(round, b.team_username, c.id);
+        await opAwardBid(b.team_username, c.id);
       } else {
-        await opRefundFailedBid(round, b.team_username, c.id);
+        await opRefundFailedBid(b.team_username, c.id);
       }
     }
   }
@@ -403,7 +346,6 @@ export async function autoResolveMatchingPhase(
 
 // 매칭권 자발적 판매: 현재 최소 주문 금액 × 개수 의 80% 환불 (만원 내림)
 export async function opSellTickets(
-  round: string,
   username: string,
   companyId: number,
   count: number,
@@ -430,43 +372,8 @@ export async function opSellTickets(
   // 80% 환불을 만원 단위 내림
   const refund = Math.floor((minPrice * count * 0.8) / 10000) * 10000;
   await sql`UPDATE teams SET seed = seed + ${refund} WHERE username = ${username}`;
-  await recordTicketSale(round, username, companyId, count, refund, minPrice);
   await sql`
     UPDATE tickets SET count = count - ${count}
     WHERE team_username = ${username} AND company_id = ${companyId}
-  `;
-}
-
-async function recordTicketSale(
-  round: string,
-  username: string,
-  companyId: number,
-  count: number,
-  refundAmount: number,
-  minOrderPrice: number,
-): Promise<void> {
-  await sql`
-    INSERT INTO ticket_sales (
-      round,
-      team_username,
-      company_id,
-      count,
-      refund_amount,
-      min_order_price
-    )
-    VALUES (
-      ${round},
-      ${username},
-      ${companyId},
-      ${count},
-      ${refundAmount},
-      ${minOrderPrice}
-    )
-    ON CONFLICT (round, team_username, company_id)
-    DO UPDATE SET
-      count = ticket_sales.count + EXCLUDED.count,
-      refund_amount = ticket_sales.refund_amount + EXCLUDED.refund_amount,
-      min_order_price = EXCLUDED.min_order_price,
-      sold_at = NOW()
   `;
 }
